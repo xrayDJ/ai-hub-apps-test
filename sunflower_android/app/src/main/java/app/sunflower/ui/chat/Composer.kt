@@ -1,7 +1,13 @@
 package app.sunflower.ui.chat
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -28,6 +34,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import app.sunflower.ui.components.SunIconButton
+import app.sunflower.ui.components.SunIcons
 import app.sunflower.ui.theme.Motion
 
 @Composable
@@ -35,14 +42,18 @@ fun Composer(
     text: String,
     onTextChange: (String) -> Unit,
     onSend: () -> Unit,
+    onStop: () -> Unit,
+    generating: Boolean,
+    ready: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
-    val canSend = text.isNotBlank()
+    val canSend = ready && text.isNotBlank()
+    val active = canSend || generating
     val shape = RoundedCornerShape(28.dp)
-    val sendScale by animateFloatAsState(if (canSend) 1f else 0.82f, Motion.bouncy(), label = "sendScale")
-    val sendContainer by animateColorAsState(if (canSend) colors.primary else colors.surfaceContainerHighest, Motion.enter(), label = "sendBg")
-    val sendTint by animateColorAsState(if (canSend) colors.onPrimary else colors.onSurfaceVariant, Motion.enter(), label = "sendFg")
+    val buttonScale by animateFloatAsState(if (active) 1f else 0.82f, Motion.bouncy(), label = "sendScale")
+    val container by animateColorAsState(if (active) colors.primary else colors.surfaceContainerHighest, Motion.enter(), label = "sendBg")
+    val tint by animateColorAsState(if (active) colors.onPrimary else colors.onSurfaceVariant, Motion.enter(), label = "sendFg")
 
     Row(
         modifier
@@ -61,7 +72,11 @@ fun Composer(
             contentAlignment = Alignment.CenterStart,
         ) {
             if (text.isEmpty()) {
-                Text("Message", style = MaterialTheme.typography.bodyLarge, color = colors.onSurfaceVariant)
+                Text(
+                    if (ready || generating) "Message" else "No model loaded",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = colors.onSurfaceVariant,
+                )
             }
             BasicTextField(
                 value = text,
@@ -74,17 +89,24 @@ fun Composer(
             )
         }
         Spacer(Modifier.width(8.dp))
-        SunIconButton(
-            icon = Icons.AutoMirrored.Filled.Send,
-            contentDescription = "Send",
-            onClick = onSend,
-            enabled = canSend,
-            container = sendContainer,
-            tint = sendTint,
-            modifier = Modifier.graphicsLayer {
-                scaleX = sendScale
-                scaleY = sendScale
-            },
-        )
+        AnimatedContent(
+            targetState = generating,
+            transitionSpec = { (scaleIn(Motion.bouncy()) + fadeIn(Motion.enter())) togetherWith (scaleOut(Motion.exit()) + fadeOut(Motion.exit())) },
+            label = "sendStop",
+        ) { isGenerating ->
+            SunIconButton(
+                icon = if (isGenerating) SunIcons.Stop else Icons.AutoMirrored.Filled.Send,
+                contentDescription = if (isGenerating) "Stop" else "Send",
+                onClick = if (isGenerating) onStop else onSend,
+                enabled = isGenerating || canSend,
+                container = container,
+                tint = tint,
+                modifier =
+                    Modifier.graphicsLayer {
+                        scaleX = buttonScale
+                        scaleY = buttonScale
+                    },
+            )
+        }
     }
 }

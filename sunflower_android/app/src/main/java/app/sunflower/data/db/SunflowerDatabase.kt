@@ -4,13 +4,14 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import app.sunflower.security.KeyVault
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
 @Database(
-    entities = [ConversationEntity::class, MessageEntity::class, SystemPromptEntity::class],
-    version = 1,
+    entities = [ConversationEntity::class, MessageEntity::class, SystemPromptEntity::class, ModelEntity::class],
+    version = 2,
     exportSchema = true,
 )
 abstract class SunflowerDatabase : RoomDatabase() {
@@ -19,6 +20,8 @@ abstract class SunflowerDatabase : RoomDatabase() {
     abstract fun messages(): MessageDao
 
     abstract fun systemPrompts(): SystemPromptDao
+
+    abstract fun models(): ModelDao
 
     companion object {
         private const val FILE_NAME = "sunflower.db"
@@ -36,6 +39,7 @@ abstract class SunflowerDatabase : RoomDatabase() {
             return Room
                 .databaseBuilder(context.applicationContext, SunflowerDatabase::class.java, FILE_NAME)
                 .openHelperFactory(factory)
+                .addMigrations(MIGRATION_1_2)
                 .addCallback(
                     object : RoomDatabase.Callback() {
                         override fun onOpen(db: SupportSQLiteDatabase) {
@@ -45,6 +49,22 @@ abstract class SunflowerDatabase : RoomDatabase() {
                     },
                 ).build()
         }
+
+        /** v2 adds the model library. Written by hand: v1 shipped before schemas were exported. */
+        private val MIGRATION_1_2 =
+            object : Migration(1, 2) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        "CREATE TABLE IF NOT EXISTS `models` (" +
+                            "`id` TEXT NOT NULL, `fileName` TEXT NOT NULL, `uri` TEXT NOT NULL, " +
+                            "`localPath` TEXT, `sizeBytes` INTEGER NOT NULL, `name` TEXT, " +
+                            "`architecture` TEXT, `sizeLabel` TEXT, `quantization` TEXT, " +
+                            "`contextLength` INTEGER, `layerCount` INTEGER, " +
+                            "`hasChatTemplate` INTEGER NOT NULL, `addedAt` INTEGER NOT NULL, " +
+                            "`lastBackend` TEXT, `failedBackends` TEXT NOT NULL, PRIMARY KEY(`id`))",
+                    )
+                }
+            }
 
         /**
          * SQLCipher treats a key of the form x'<64 hex chars>' as the raw 256-bit

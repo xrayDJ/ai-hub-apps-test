@@ -52,3 +52,28 @@ data class SystemPromptEntity(
     val content: String,
     val createdAt: Long,
 )
+
+/** A GGUF the user imported. The file itself stays where the user keeps it unless copied in. */
+@Entity(tableName = "models")
+data class ModelEntity(
+    @PrimaryKey val id: String,
+    /** File name as shown by the picker, e.g. "Qwen3-1.7B-Q4_K_M.gguf". */
+    val fileName: String,
+    /** content:// URI with a persisted read grant. */
+    val uri: String,
+    /** Set when the file was copied into app storage because direct access failed. */
+    val localPath: String?,
+    val sizeBytes: Long,
+    val name: String?,
+    val architecture: String?,
+    val sizeLabel: String?,
+    val quantization: String?,
+    val contextLength: Int?,
+    val layerCount: Int?,
+    val hasChatTemplate: Boolean,
+    val addedAt: Long,
+    /** Backend that last loaded this model successfully ("npu", "gpu", "cpu"). */
+    val lastBackend: String?,
+    /** Comma-separated backends that failed or crashed while loading this model. */
+    val failedBackends: String,
+)

@@ -18,6 +18,7 @@ import app.sunflower.ui.chat.ChatViewModel
 import app.sunflower.ui.home.HomeScreen
 import app.sunflower.ui.home.HomeViewModel
 import app.sunflower.ui.models.ModelsScreen
+import app.sunflower.ui.models.ModelsViewModel
 import app.sunflower.ui.theme.Motion
 import kotlinx.serialization.Serializable
 
@@ -45,7 +46,7 @@ fun SunflowerNavHost() {
         popExitTransition = { slideOutOfContainer(SlideDirection.End, Motion.slide) { it / 5 } + fadeOut(Motion.exit()) },
     ) {
         composable<HomeRoute> {
-            val vm = viewModel { HomeViewModel(container.conversations, container.runtime) }
+            val vm = viewModel { HomeViewModel(container.conversations, container.runtime, container.engine) }
             val state by vm.state.collectAsStateWithLifecycle()
             HomeScreen(
                 state = state,
@@ -55,15 +56,27 @@ fun SunflowerNavHost() {
             )
         }
         composable<ModelsRoute> {
-            ModelsScreen(onBack = { nav.popBackStack() })
+            val vm = viewModel { ModelsViewModel(container.models, container.engine) }
+            val state by vm.state.collectAsStateWithLifecycle()
+            ModelsScreen(
+                state = state,
+                onBack = { nav.popBackStack() },
+                onImport = vm::import,
+                onLoad = vm::load,
+                onUnload = vm::unload,
+                onRemove = vm::remove,
+                onCopyIntoApp = vm::copyIntoApp,
+            )
         }
         composable<ChatRoute> { entry ->
             val route = entry.toRoute<ChatRoute>()
-            val vm = viewModel { ChatViewModel(route.conversationId, container.conversations) }
+            val vm = viewModel { ChatViewModel(route.conversationId, container.conversations, container.engine) }
             val state by vm.state.collectAsStateWithLifecycle()
             ChatScreen(
                 state = state,
                 onSend = vm::send,
+                onStop = vm::stop,
+                onRetry = vm::retry,
                 onSystemPromptChange = vm::setSystemPrompt,
                 onBack = { nav.popBackStack() },
                 onOpenModels = { nav.navigate(ModelsRoute) },

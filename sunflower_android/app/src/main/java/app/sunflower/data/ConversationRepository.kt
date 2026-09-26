@@ -58,6 +58,26 @@ class ConversationRepository(
         db.conversations().upsert(conversation.copy(title = title, updatedAt = now))
     }
 
+    suspend fun conversation(id: String): ConversationEntity? = database().conversations().get(id)
+
+    suspend fun messages(conversationId: String): List<MessageEntity> = database().messages().list(conversationId)
+
+    suspend fun addAssistantMessage(message: MessageEntity) {
+        val db = database()
+        db.messages().upsert(message)
+        val conversation = db.conversations().get(message.conversationId) ?: return
+        db.conversations().upsert(conversation.copy(updatedAt = message.createdAt))
+    }
+
+    suspend fun setModelName(
+        conversationId: String,
+        modelName: String,
+    ) {
+        val dao = database().conversations()
+        val conversation = dao.get(conversationId) ?: return
+        if (conversation.modelName != modelName) dao.upsert(conversation.copy(modelName = modelName))
+    }
+
     suspend fun updateSystemPrompt(
         conversationId: String,
         systemPrompt: String,

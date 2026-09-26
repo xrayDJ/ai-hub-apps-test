@@ -60,6 +60,24 @@ object SunIcons {
             moveTo(4f, 15f); lineTo(4f, 20f); lineTo(20f, 20f); lineTo(20f, 15f)
         }
 
+    /** Filled rounded square: stop generating. */
+    val Stop =
+        ImageVector
+            .Builder("Stop", 24.dp, 24.dp, 24f, 24f)
+            .path(fill = SolidColor(Color.Black)) {
+                moveTo(8f, 6f); lineTo(16f, 6f)
+                arcTo(2f, 2f, 0f, false, true, 18f, 8f); lineTo(18f, 16f)
+                arcTo(2f, 2f, 0f, false, true, 16f, 18f); lineTo(8f, 18f)
+                arcTo(2f, 2f, 0f, false, true, 6f, 16f); lineTo(6f, 8f)
+                arcTo(2f, 2f, 0f, false, true, 8f, 6f); close()
+            }.build()
+
+    /** Chevron, rotated by callers for expand/collapse. */
+    val ChevronDown =
+        icon("ChevronDown") {
+            moveTo(6f, 9f); lineTo(12f, 15f); lineTo(18f, 9f)
+        }
+
     /** Padlock: encryption status. */
     val Lock =
         icon("Lock") {

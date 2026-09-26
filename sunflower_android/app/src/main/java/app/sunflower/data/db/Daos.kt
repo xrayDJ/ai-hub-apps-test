@@ -28,6 +28,9 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE conversationId = :conversationId ORDER BY createdAt ASC")
     fun observe(conversationId: String): Flow<List<MessageEntity>>
 
+    @Query("SELECT * FROM messages WHERE conversationId = :conversationId ORDER BY createdAt ASC")
+    suspend fun list(conversationId: String): List<MessageEntity>
+
     @Upsert
     suspend fun upsert(message: MessageEntity)
 
@@ -44,5 +47,23 @@ interface SystemPromptDao {
     suspend fun upsert(prompt: SystemPromptEntity)
 
     @Query("DELETE FROM system_prompts WHERE id = :id")
+    suspend fun delete(id: String)
+}
+
+@Dao
+interface ModelDao {
+    @Query("SELECT * FROM models ORDER BY addedAt DESC")
+    fun observeAll(): Flow<List<ModelEntity>>
+
+    @Query("SELECT * FROM models WHERE id = :id")
+    suspend fun get(id: String): ModelEntity?
+
+    @Query("SELECT * FROM models WHERE uri = :uri LIMIT 1")
+    suspend fun findByUri(uri: String): ModelEntity?
+
+    @Upsert
+    suspend fun upsert(model: ModelEntity)
+
+    @Query("DELETE FROM models WHERE id = :id")
     suspend fun delete(id: String)
 }

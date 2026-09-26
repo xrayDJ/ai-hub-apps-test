@@ -41,7 +41,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.sunflower.data.db.ConversationEntity
+import app.sunflower.data.displayName
 import app.sunflower.engine.GenieXRuntime
+import app.sunflower.engine.InferenceEngine
 import app.sunflower.ui.components.SunButton
 import app.sunflower.ui.components.SunButtonStyle
 import app.sunflower.ui.components.SunIconButton
@@ -84,7 +86,7 @@ fun HomeScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item { Header(onOpenModels, Modifier.statusBarsPadding()) }
-            item { ModelCard(state.runtime, onOpenModels, Modifier.padding(top = 24.dp)) }
+            item { ModelCard(state.runtime, state.engine, onOpenModels, Modifier.padding(top = 24.dp)) }
             if (state.storageError != null) {
                 item { Notice("Couldn't open saved chats: ${state.storageError}") }
             } else if (state.conversations.isNotEmpty()) {
@@ -137,38 +139,57 @@ private fun Header(
 @Composable
 private fun ModelCard(
     runtime: GenieXRuntime.State,
+    engine: InferenceEngine.State,
     onOpenModels: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
-    val status =
-        when (runtime) {
-            GenieXRuntime.State.Starting -> "Starting"
-            GenieXRuntime.State.Ready -> "No model loaded"
-            is GenieXRuntime.State.Failed -> "Runtime unavailable"
+    val status: String
+    var detail: String? = null
+    var ok = false
+    var busy = false
+    when {
+        runtime is GenieXRuntime.State.Failed -> {
+            status = "Runtime unavailable"
+            detail = runtime.reason
         }
-    Column(
+        engine is InferenceEngine.State.Ready -> {
+            status = engine.model.displayName
+            detail = "Running on ${engine.backend.label}"
+            ok = true
+        }
+        engine is InferenceEngine.State.Loading -> {
+            status = engine.model.displayName
+            detail = "Loading on ${engine.backend.label}…"
+            busy = true
+        }
+        engine is InferenceEngine.State.Failed -> {
+            status = "Couldn't load ${engine.model.displayName}"
+        }
+        runtime == GenieXRuntime.State.Starting -> {
+            status = "Starting"
+            busy = true
+        }
+        else -> status = "No model loaded"
+    }
+    Row(
         modifier
             .fillMaxWidth()
             .clip(MaterialTheme.shapes.extraLarge)
             .background(colors.surfaceContainer)
             .border(1.dp, colors.outlineVariant, MaterialTheme.shapes.extraLarge)
-            .padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+            .padding(start = 20.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            StatusDot(ok = runtime == GenieXRuntime.State.Ready, busy = runtime == GenieXRuntime.State.Starting)
-            Spacer(Modifier.width(10.dp))
-            Text(status, style = MaterialTheme.typography.titleMedium, color = colors.onSurface, modifier = Modifier.weight(1f))
-            SunButton("Models", onOpenModels, style = SunButtonStyle.Ghost)
+        if (busy) SunflowerMark(size = 16.dp, spinning = true, bloom = false) else StatusDot(ok = ok, busy = false)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(status, style = MaterialTheme.typography.titleMedium, color = colors.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (detail != null) {
+                Text(detail, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
         }
-        if (runtime is GenieXRuntime.State.Failed) {
-            Text(
-                runtime.reason,
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.onSurfaceVariant,
-                modifier = Modifier.padding(end = 12.dp, bottom = 10.dp),
-            )
-        }
+        SunButton("Models", onOpenModels, style = SunButtonStyle.Ghost)
     }
 }
 

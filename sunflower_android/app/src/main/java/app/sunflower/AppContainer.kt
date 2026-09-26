@@ -2,8 +2,10 @@ package app.sunflower
 
 import android.content.Context
 import app.sunflower.data.ConversationRepository
+import app.sunflower.data.ModelLibrary
 import app.sunflower.data.db.SunflowerDatabase
 import app.sunflower.engine.GenieXRuntime
+import app.sunflower.engine.InferenceEngine
 import app.sunflower.security.KeyVault
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -21,5 +23,9 @@ class AppContainer(context: Context) {
 
     val conversations = ConversationRepository { database.await() }
 
+    val models = ModelLibrary(context) { database.await() }
+
     val runtime = GenieXRuntime(context, appScope)
+
+    val engine = InferenceEngine(context, runtime, models, conversations, appScope)
 }
