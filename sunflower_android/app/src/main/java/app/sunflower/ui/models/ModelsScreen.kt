@@ -1,6 +1,10 @@
 package app.sunflower.ui.models
 
+import android.content.ActivityNotFoundException
+import android.content.Context
+import android.content.Intent
 import android.net.Uri
+import android.provider.Settings
 import android.text.format.Formatter
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -45,6 +49,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import app.sunflower.data.db.ModelEntity
 import app.sunflower.data.displayName
 import app.sunflower.data.failedSet
@@ -72,7 +77,14 @@ fun ModelsScreen(
     onUnload: () -> Unit,
     onRemove: (ModelEntity) -> Unit,
     onCopyIntoApp: (ModelEntity) -> Unit,
+    onRequestFileAccess: (ModelEntity) -> Unit,
+    onResume: () -> Unit,
 ) {
+    val context = LocalContext.current
+    LifecycleResumeEffect(Unit) {
+        onResume()
+        onPauseOrDispose {}
+    }
     val picker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
             if (uri != null) onImport(uri)
@@ -114,6 +126,10 @@ fun ModelsScreen(
                         onUnload = onUnload,
                         onRemove = { onRemove(model) },
                         onCopyIntoApp = { onCopyIntoApp(model) },
+                        onAllowFileAccess = {
+                            onRequestFileAccess(model)
+                            openAllFilesAccessSettings(context)
+                        },
                         modifier = Modifier.animateItem(),
                     )
                 }
@@ -160,6 +176,7 @@ private fun ModelCard(
     onUnload: () -> Unit,
     onRemove: () -> Unit,
     onCopyIntoApp: () -> Unit,
+    onAllowFileAccess: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -209,23 +226,13 @@ private fun ModelCard(
                 }
             mine && engine is InferenceEngine.State.Failed -> {
                 Text(engine.message, style = MaterialTheme.typography.bodySmall, color = colors.error, maxLines = 4, overflow = TextOverflow.Ellipsis)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    SunButton("Try again", { onLoad(choice) }, style = SunButtonStyle.Tonal, enabled = !busy)
-                    if (engine.canCopyIntoApp) {
+                SunButton("Try again", { onLoad(choice) }, style = SunButtonStyle.Tonal, enabled = !busy)
+                if (engine.canCopyIntoApp) {
+                    Column {
+                        if (engine.canGrantFileAccess) SunButton("Allow file access", onAllowFileAccess, style = SunButtonStyle.Ghost)
                         SunButton("Copy into app", onCopyIntoApp, style = SunButtonStyle.Ghost)
                     }
-                }
-                if (engine.canCopyIntoApp) {
-                    var explain by remember { mutableStateOf(false) }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Why copy?", style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
-                        InfoHintButton(explain, { explain = !explain })
-                    }
-                    InfoHintText(
-                        explain,
-                        "Some phones don't let the engine read a file where it's stored. A private copy always works, " +
-                            "but uses ${Formatter.formatShortFileSize(context, model.sizeBytes.coerceAtLeast(0))} of extra space.",
-                    )
+                    FileAccessHint(model, engine.canGrantFileAccess)
                 }
             }
             else ->
@@ -266,6 +273,40 @@ private fun ModelCard(
                 SunButton("Remove", onRemove, style = SunButtonStyle.Ghost, enabled = !(mine && busy))
             }
         }
+    }
+}
+
+/** Explains the two ways around in-place loading failures, only when asked. */
+@Composable
+private fun FileAccessHint(
+    model: ModelEntity,
+    offerAccess: Boolean,
+) {
+    val context = LocalContext.current
+    var explain by remember { mutableStateOf(false) }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("Which should I pick?", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        InfoHintButton(explain, { explain = !explain })
+    }
+    val size = Formatter.formatShortFileSize(context, model.sizeBytes.coerceAtLeast(0))
+    InfoHintText(
+        explain,
+        buildString {
+            append("Your phone didn't let the engine read the file where it's stored. ")
+            if (offerAccess) {
+                append("File access lets Sunflower load models in place, with no copy, but it can see all your shared files. ")
+            }
+            append("A copy keeps Sunflower to its own storage and uses $size more space; you can then delete the original.")
+        },
+    )
+}
+
+private fun openAllFilesAccessSettings(context: Context) {
+    val perApp = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:${context.packageName}"))
+    try {
+        context.startActivity(perApp)
+    } catch (e: ActivityNotFoundException) {
+        context.startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
     }
 }
 

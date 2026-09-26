@@ -70,7 +70,13 @@ class InferenceEngine(
 
         data class Ready(val model: ModelEntity, val backend: Backend, val contextSize: Int) : State
 
-        data class Failed(val model: ModelEntity, val message: String, val canCopyIntoApp: Boolean) : State
+        data class Failed(
+            val model: ModelEntity,
+            val message: String,
+            val canCopyIntoApp: Boolean,
+            /** Granting "All files access" would let the engine read the file in place. */
+            val canGrantFileAccess: Boolean = false,
+        ) : State
     }
 
     /** The reply being written right now. Saved to the database when it finishes. */
@@ -197,7 +203,14 @@ class InferenceEngine(
         }
         opened.close()
         // If every backend failed on a file we read in place, the path hand-off is the likely culprit.
-        _state.value = State.Failed(model, lastError, canCopyIntoApp = model.localPath == null)
+        val inPlace = model.localPath == null
+        _state.value =
+            State.Failed(
+                model,
+                lastError,
+                canCopyIntoApp = inPlace,
+                canGrantFileAccess = inPlace && !library.hasAllFilesAccess(),
+            )
     }
 
     private fun candidatesFor(

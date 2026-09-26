@@ -13,6 +13,14 @@
         android:name="android.permission.ACCESS_NETWORK_STATE"
         tools:node="remove" />
 
+    <!--
+        Optional: lets the engine read a GGUF where it is stored instead of
+        copying it. Only requested when the user chooses it from a model card.
+    -->
+    <uses-permission
+        android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
+
     <application
         android:name=".SunflowerApp"
         android:allowBackup="false"

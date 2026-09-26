@@ -34,6 +34,9 @@ class ModelsViewModel(
     private val importError = MutableStateFlow<String?>(null)
     private val copying = MutableStateFlow<Map<String, Float>>(emptyMap())
 
+    /** Model to retry once the user returns from granting "All files access". */
+    private var awaitingAccessFor: String? = null
+
     val state: StateFlow<ModelsState> =
         combine(
             library.observe().catch { emit(emptyList()) },
@@ -61,6 +64,18 @@ class ModelsViewModel(
                 importing.value = false
             }
         }
+    }
+
+    fun requestedFileAccess(model: ModelEntity) {
+        awaitingAccessFor = model.id
+    }
+
+    /** Called when the screen resumes, e.g. back from the system settings page. */
+    fun onResume() {
+        val id = awaitingAccessFor ?: return
+        if (!library.hasAllFilesAccess()) return
+        awaitingAccessFor = null
+        viewModelScope.launch { library.get(id)?.let { engine.load(it, BackendChoice.Auto) } }
     }
 
     fun load(

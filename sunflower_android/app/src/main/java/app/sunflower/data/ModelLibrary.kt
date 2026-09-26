@@ -4,7 +4,9 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.ParcelFileDescriptor
+import android.os.Environment
 import android.provider.OpenableColumns
+import android.system.Os
 import app.sunflower.data.db.ModelEntity
 import app.sunflower.data.db.SunflowerDatabase
 import app.sunflower.engine.GgufReader
@@ -78,9 +80,11 @@ class ModelLibrary(
         }
 
     /**
-     * Opens the model for the native loader. Copied models use their private
-     * path. Otherwise the picked file is passed through /proc/self/fd, which
-     * avoids duplicating gigabytes; the descriptor must stay open while loaded.
+     * Opens the model for the native loader, in order of preference:
+     *  1. the private copy, if the user made one;
+     *  2. the file's real path, readable when "All files access" is granted;
+     *  3. the picker's descriptor via /proc/self/fd, which some devices allow.
+     * The descriptor stays open while the model is loaded.
      */
     suspend fun open(model: ModelEntity): ModelHandle =
         withContext(Dispatchers.IO) {
@@ -90,8 +94,30 @@ class ModelLibrary(
             val pfd: ParcelFileDescriptor =
                 resolver.openFileDescriptor(Uri.parse(model.uri), "r")
                     ?: error("The file is no longer available")
-            ModelHandle("/proc/self/fd/${pfd.fd}") { pfd.close() }
+            val fdPath = "/proc/self/fd/${pfd.fd}"
+            val realPath = if (hasAllFilesAccess()) realPathOf(fdPath) else null
+            ModelHandle(realPath ?: fdPath) { pfd.close() }
         }
+
+    fun hasAllFilesAccess(): Boolean = Environment.isExternalStorageManager()
+
+    /**
+     * Asks the kernel where an open descriptor points. This works for every
+     * document provider (Downloads, SD cards, media), unlike parsing their
+     * document ids. FUSE mounts can report the internal /mnt/user/<id>/ view,
+     * which apps can't open, so map it back to /storage/.
+     */
+    private fun realPathOf(fdPath: String): String? {
+        val target = runCatching { Os.readlink(fdPath) }.getOrNull() ?: return null
+        val candidates =
+            listOf(
+                target,
+                target.replaceFirst(Regex("^/mnt/user/\\d+/emulated/"), "/storage/emulated/"),
+                target.replaceFirst(Regex("^/mnt/user/\\d+/"), "/storage/"),
+                target.replaceFirst(Regex("^/mnt/pass_through/\\d+/"), "/storage/"),
+            ).distinct()
+        return candidates.firstOrNull { it.startsWith("/") && File(it).canRead() }
+    }
 
     /** Copies the file into app storage, for devices where direct access fails. */
     suspend fun copyIntoApp(

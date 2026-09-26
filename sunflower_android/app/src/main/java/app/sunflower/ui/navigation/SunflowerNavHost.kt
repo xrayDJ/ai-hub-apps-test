@@ -66,6 +66,8 @@ fun SunflowerNavHost() {
                 onUnload = vm::unload,
                 onRemove = vm::remove,
                 onCopyIntoApp = vm::copyIntoApp,
+                onRequestFileAccess = vm::requestedFileAccess,
+                onResume = vm::onResume,
             )
         }
         composable<ChatRoute> { entry ->
