@@ -69,6 +69,9 @@ import app.sunflower.ui.theme.CodeStyle
 import app.sunflower.ui.theme.Motion
 import java.util.Locale
 
+/** Max guesses applied when switching to MTP. */
+private const val MTP_DEFAULT_MAX = 3
+
 private enum class Tab(val label: String) { Replies("Replies"), Conversation("Conversation"), Loading("Loading") }
 
 @Composable
@@ -511,8 +514,26 @@ private fun LoadingTab(
             selected = l.speculative,
             default = d.speculative,
             label = ::speculativeLabel,
-            onChange = { v -> set { copy(speculative = v, draftModelId = draftModelId.takeIf { speculativeUsesFile(v) }) } },
+            onChange = { v ->
+                set {
+                    copy(
+                        speculative = v,
+                        draftModelId = draftModelId.takeIf { speculativeUsesFile(v) },
+                        // MTP heads guess best a few tokens ahead; keep a custom value if the user set one.
+                        draftMax = if (v == "draft-mtp" && draftMax == d.draftMax) MTP_DEFAULT_MAX else draftMax,
+                    )
+                }
+            },
             footer = {
+                if (l.speculative != "none" && backend != Backend.CPU) {
+                    Text(
+                        "On phone ${backend.label}s, checking guesses and passing the model's state to the helper often costs more than it saves, " +
+                            "so replies can be slower than without it. Each reply's stats compare its speed with plain generation.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
+                }
                 if (hasMtp && l.speculative == "none") {
                     Text(
                         "This model has $mtpLayers built-in MTP layer${if (mtpLayers == 1) "" else "s"}.",

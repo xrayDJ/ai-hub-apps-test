@@ -471,6 +471,7 @@ class InferenceEngine(
                         ttftMs = profile?.ttftMs,
                         decodeTokensPerSec = profile?.decodingSpeed,
                         draftTokens = profile?.draftNTotal?.takeIf { it > 0 },
+                        speedupVsPlain = compareWithPlain(ready, profile),
                         draftAccepted = profile?.draftNAccepted?.takeIf { (profile?.draftNTotal ?: 0) > 0 },
                     ),
                 )
@@ -486,6 +487,28 @@ class InferenceEngine(
                 _failure.value = GenerationFailure(conversationId, it)
             }
         }
+    }
+
+    /**
+     * Remembers the plain (non-speculative) decode speed per model and backend,
+     * and for speculative replies returns their speed relative to it, so each
+     * reply shows whether speculation actually helped on this phone.
+     */
+    private fun compareWithPlain(
+        ready: State.Ready,
+        profile: ProfilingData?,
+    ): Double? {
+        if (profile == null) return null
+        val speed = profile.decodingSpeed.takeIf { it > 0 } ?: return null
+        val key = "plain_speed|${ready.model.id}|${ready.backend.computeUnit}"
+        val speculative = (profile.draftNTotal) > 0
+        // Very short replies give noisy speeds; don't let them set the baseline.
+        if (!speculative) {
+            if (profile.generatedTokens >= MIN_TOKENS_FOR_BASELINE) prefs.edit().putFloat(key, speed.toFloat()).apply()
+            return null
+        }
+        val plain = prefs.getFloat(key, 0f).takeIf { it > 0f } ?: return null
+        return speed / plain
     }
 
     private fun releaseLocked() {
@@ -527,6 +550,7 @@ class InferenceEngine(
         const val TAG = "InferenceEngine"
         const val KEY_PENDING_LOAD = "pending_load"
         const val KEY_PENDING_GENERATE = "pending_generate"
+        const val MIN_TOKENS_FOR_BASELINE = 16L
         /** Template tokens around the system prompt, kept with it when the window shifts. */
         const val SYSTEM_OVERHEAD = 16
         const val FRAME_MS = 33L

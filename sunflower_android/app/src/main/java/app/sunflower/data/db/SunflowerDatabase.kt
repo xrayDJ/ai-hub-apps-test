@@ -11,7 +11,7 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
 @Database(
     entities = [ConversationEntity::class, MessageEntity::class, SystemPromptEntity::class, ModelEntity::class],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class SunflowerDatabase : RoomDatabase() {
@@ -39,7 +39,7 @@ abstract class SunflowerDatabase : RoomDatabase() {
             return Room
                 .databaseBuilder(context.applicationContext, SunflowerDatabase::class.java, FILE_NAME)
                 .openHelperFactory(factory)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                 .addCallback(
                     object : RoomDatabase.Callback() {
                         override fun onOpen(db: SupportSQLiteDatabase) {
@@ -89,6 +89,14 @@ abstract class SunflowerDatabase : RoomDatabase() {
             object : Migration(4, 5) {
                 override fun migrate(db: SupportSQLiteDatabase) {
                     db.execSQL("ALTER TABLE `system_prompts` ADD COLUMN `isDefault` INTEGER NOT NULL DEFAULT 0")
+                }
+            }
+
+        /** v6: speculative replies record their speed relative to plain generation. */
+        private val MIGRATION_5_6 =
+            object : Migration(5, 6) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL("ALTER TABLE `messages` ADD COLUMN `speedupVsPlain` REAL")
                 }
             }
 
