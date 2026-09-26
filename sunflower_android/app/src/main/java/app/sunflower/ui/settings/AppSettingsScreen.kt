@@ -1,6 +1,15 @@
 package app.sunflower.ui.settings
 
 import android.app.KeyguardManager
+import androidx.annotation.RawRes
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.draw.clip
+import app.sunflower.R
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -149,31 +158,72 @@ private fun DeleteAll(onDeleteAll: () -> Unit) {
     }
 }
 
-/** Open-source notices, folded until asked for. */
+/** Open-source notices, folded until asked for. Each entry opens its full license text. */
 @Composable
 private fun Licenses() {
     var open by remember { mutableStateOf(false) }
     SunButton(if (open) "Hide open-source licenses" else "Open-source licenses", { open = !open }, style = SunButtonStyle.Ghost)
     AnimatedVisibility(open) {
-        Column(Modifier.padding(bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            LICENSES.forEach { (name, license) ->
-                Column {
-                    Text(name, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
-                    Text(license, style = CodeStyle.copy(fontSize = MaterialTheme.typography.labelSmall.fontSize), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
+        Column(Modifier.padding(bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            LICENSES.forEach { LicenseEntry(it) }
         }
     }
 }
 
+@Composable
+private fun LicenseEntry(notice: Notice) {
+    val colors = MaterialTheme.colorScheme
+    val context = LocalContext.current
+    var expanded by remember { mutableStateOf(false) }
+    val text by produceState<String?>(null, expanded) {
+        if (expanded && value == null) {
+            value = withContext(Dispatchers.IO) { context.resources.openRawResource(notice.text).bufferedReader().use { it.readText() } }
+        }
+    }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable { expanded = !expanded }
+            .padding(vertical = 8.dp),
+    ) {
+        Text(notice.name, style = MaterialTheme.typography.labelLarge, color = colors.onSurface)
+        Text(notice.summary, style = CodeStyle.copy(fontSize = MaterialTheme.typography.labelSmall.fontSize), color = colors.onSurfaceVariant)
+        AnimatedVisibility(expanded && text != null) {
+            Text(
+                text.orEmpty().trim(),
+                style = CodeStyle.copy(fontSize = MaterialTheme.typography.labelSmall.fontSize),
+                color = colors.onSurfaceVariant,
+                modifier =
+                    Modifier
+                        .padding(top = 8.dp)
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(colors.surfaceContainer)
+                        .padding(12.dp),
+            )
+        }
+    }
+}
+
+private class Notice(
+    val name: String,
+    val summary: String,
+    @param:RawRes val text: Int,
+)
+
 private val LICENSES =
     listOf(
-        "GenieX SDK (Qualcomm)" to "Qualcomm license terms · github.com/qualcomm/geniex",
-        "llama.cpp / ggml" to "MIT License · Copyright (c) 2023-2026 The ggml authors",
-        "SQLCipher for Android" to "BSD-style license · Copyright (c) Zetetic LLC",
-        "Kotlin, kotlinx.coroutines, kotlinx.serialization" to "Apache License 2.0 · JetBrains s.r.o.",
-        "AndroidX, Jetpack Compose, Material 3, Room" to "Apache License 2.0 · The Android Open Source Project",
-        "Bricolage Grotesque" to "SIL Open Font License 1.1 · The Bricolage Grotesque Project Authors",
-        "Inter" to "SIL Open Font License 1.1 · The Inter Project Authors",
-        "JetBrains Mono" to "SIL Open Font License 1.1 · The JetBrains Mono Project Authors",
+        Notice("GenieX SDK", "BSD 3-Clause License · Copyright (c) 2024-2026 Qualcomm Technologies, Inc.", R.raw.license_geniex),
+        Notice("llama.cpp / ggml", "MIT License · Copyright (c) 2023-2026 The ggml authors", R.raw.license_ggml),
+        Notice("LLVM OpenMP runtime", "Apache License 2.0 with LLVM Exceptions · The LLVM Project", R.raw.license_openmp),
+        Notice("SQLCipher for Android", "BSD 3-Clause License · Copyright (c) 2008-2023 Zetetic LLC. Includes SQLite (public domain).", R.raw.license_sqlcipher),
+        Notice(
+            "AndroidX, Jetpack Compose, Material 3, Room, Kotlin, kotlinx.coroutines, kotlinx.serialization",
+            "Apache License 2.0 · The Android Open Source Project, JetBrains s.r.o.",
+            R.raw.license_apache2,
+        ),
+        Notice("Bricolage Grotesque", "SIL Open Font License 1.1 · Copyright 2022 The Bricolage Grotesque Project Authors", R.raw.license_ofl_bricolage),
+        Notice("Inter", "SIL Open Font License 1.1 · Copyright 2020 The Inter Project Authors", R.raw.license_ofl_inter),
+        Notice("JetBrains Mono", "SIL Open Font License 1.1 · Copyright 2020 The JetBrains Mono Project Authors", R.raw.license_ofl_jetbrains_mono),
     )

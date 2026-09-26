@@ -45,5 +45,21 @@ excluded in `app/build.gradle.kts`.
 
 ## Licenses
 
-Fonts (Bricolage Grotesque, Inter, JetBrains Mono) are bundled under the SIL
-Open Font License; see `licenses/`.
+Sunflower bundles open-source code whose licenses ask for their notices to
+travel with the app. The full texts are in `licenses/` and in the app under
+Settings → About → Open-source licenses:
+
+| Component | License |
+|---|---|
+| GenieX SDK (native libraries) | BSD 3-Clause, © 2024-2026 Qualcomm Technologies, Inc. |
+| llama.cpp / ggml | MIT, © 2023-2026 The ggml authors |
+| LLVM OpenMP runtime (`libomp.so`) | Apache 2.0 with LLVM Exceptions |
+| SQLCipher for Android | BSD 3-Clause, © 2008-2023 Zetetic LLC (includes public-domain SQLite) |
+| AndroidX, Compose, Room, Kotlin libraries | Apache 2.0 |
+| Bricolage Grotesque, Inter, JetBrains Mono | SIL Open Font License 1.1 |
+
+GenieX is also "subject to Qualcomm's Terms of Use"
+(qualcomm.com/site/terms-of-use). Its BSD license forbids using Qualcomm's name
+to endorse or promote Sunflower, so describe it factually ("runs on the GenieX
+SDK"), not as endorsed by Qualcomm. The Qualcomm AI Engine Direct (QNN/QAIRT)
+libraries are excluded from the APK and are not redistributed.

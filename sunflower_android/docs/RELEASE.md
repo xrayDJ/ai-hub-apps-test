@@ -20,8 +20,11 @@ runtime. `versionCode` = CI run number + 100, so every build is newer.
    `SUNFLOWER_UPLOAD_KEY_PASSWORD`. The next CI run produces a signed `.aab`.
 3. **Play Console:** create the app, enable **Play App Signing**, upload the `.aab`
    to an internal testing track first.
-4. **Check the GenieX SDK's license** (github.com/qualcomm/geniex) permits
-   redistributing its native libraries in your app.
+4. **Licenses:** GenieX is BSD 3-Clause, which allows shipping its native
+   libraries; its notice and every other bundled license are shown in the app
+   (Settings → About) and kept in `licenses/`. Read Qualcomm's Terms of Use
+   (qualcomm.com/site/terms-of-use), which GenieX also points to, and keep
+   Qualcomm's name out of the store listing except as a plain fact.
 
 ## Play Console answers
 
