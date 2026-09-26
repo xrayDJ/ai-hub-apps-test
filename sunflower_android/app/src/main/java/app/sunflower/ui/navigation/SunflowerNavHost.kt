@@ -53,6 +53,7 @@ fun SunflowerNavHost() {
                 onNewChat = { nav.navigate(ChatRoute()) },
                 onOpenChat = { nav.navigate(ChatRoute(it)) },
                 onOpenModels = { nav.navigate(ModelsRoute) },
+                onDelete = vm::delete,
             )
         }
         composable<ModelsRoute> {
@@ -79,6 +80,8 @@ fun SunflowerNavHost() {
                 onSend = vm::send,
                 onStop = vm::stop,
                 onRetry = vm::retry,
+                onRegenerate = vm::regenerate,
+                onEdit = vm::sendEdit,
                 onSystemPromptChange = vm::setSystemPrompt,
                 onBack = { nav.popBackStack() },
                 onOpenModels = { nav.navigate(ModelsRoute) },

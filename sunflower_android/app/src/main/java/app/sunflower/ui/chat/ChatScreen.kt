@@ -8,6 +8,8 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
@@ -47,12 +49,17 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.sunflower.data.ConversationRepository
 import app.sunflower.data.db.MessageEntity
@@ -65,7 +72,10 @@ import app.sunflower.ui.components.SunIconButton
 import app.sunflower.ui.components.SunIcons
 import app.sunflower.ui.components.SunflowerMark
 import app.sunflower.ui.components.rememberHaptics
+import app.sunflower.ui.markdown.MarkdownText
+import app.sunflower.ui.markdown.copyToClipboard
 import app.sunflower.ui.theme.Motion
+import kotlinx.coroutines.launch
 import java.util.Locale
 
 private const val STREAMING_KEY = "streaming"
@@ -76,6 +86,8 @@ fun ChatScreen(
     onSend: (String) -> Unit,
     onStop: () -> Unit,
     onRetry: () -> Unit,
+    onRegenerate: () -> Unit,
+    onEdit: (messageId: String, text: String) -> Unit,
     onSystemPromptChange: (String) -> Unit,
     onBack: () -> Unit,
     onOpenModels: () -> Unit,
@@ -84,7 +96,13 @@ fun ChatScreen(
     val haptics = rememberHaptics()
     var input by rememberSaveable { mutableStateOf("") }
     var editingPrompt by rememberSaveable { mutableStateOf(false) }
+    var editingId by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
+    val lastUserId = state.messages.lastOrNull { it.role == ConversationRepository.ROLE_USER }?.id
+    val lastId = state.messages.lastOrNull()?.id
     val itemCount = state.messages.size + if (state.streaming != null) 1 else 0
 
     // Follow the conversation while the user is at the bottom; stop following
@@ -128,8 +146,32 @@ fun ChatScreen(
                         modifier = Modifier.fillMaxSize(),
                     ) {
                         items(state.messages, key = { it.id }) { message ->
+                            val isLast = message.id == lastId
+                            val toggle = { selectedId = if (selectedId == message.id) null else message.id }
+                            val copy = {
+                                copyToClipboard(context, message.content)
+                                haptics.tick()
+                                selectedId = null
+                            }
                             if (message.role == ConversationRepository.ROLE_USER) {
-                                UserMessage(message.content, Modifier.animateItem())
+                                val canEdit = message.id == lastUserId && state.canSend
+                                UserMessage(
+                                    text = message.content,
+                                    showActions = selectedId == message.id,
+                                    onTap = toggle,
+                                    onCopy = copy,
+                                    onEdit =
+                                        if (canEdit) {
+                                            {
+                                                editingId = message.id
+                                                input = message.content
+                                                selectedId = null
+                                            }
+                                        } else {
+                                            null
+                                        },
+                                    modifier = Modifier.animateItem(),
+                                )
                             } else {
                                 AssistantMessage(
                                     content = message.content,
@@ -137,6 +179,11 @@ fun ChatScreen(
                                     thinkingOpen = false,
                                     working = false,
                                     stats = statsLine(message),
+                                    // The latest reply keeps its actions in view; older ones show them on tap.
+                                    showActions = (isLast && !state.generating) || selectedId == message.id,
+                                    onTap = toggle,
+                                    onCopy = copy,
+                                    onRegenerate = if (isLast && state.canSend) onRegenerate else null,
                                     modifier = Modifier.animateItem(),
                                 )
                             }
@@ -149,11 +196,32 @@ fun ChatScreen(
                                     thinkingOpen = live.thinkingOpen,
                                     working = true,
                                     stats = null,
+                                    showActions = false,
+                                    onTap = {},
+                                    onCopy = {},
+                                    onRegenerate = null,
                                     modifier = Modifier.animateItem(),
                                 )
                             }
                         }
                     }
+                }
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = !following && itemCount > 0,
+                    enter = fadeIn(Motion.enter()) + scaleIn(Motion.bouncy()),
+                    exit = fadeOut(Motion.exit()) + scaleOut(Motion.exit()),
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp),
+                ) {
+                    SunIconButton(
+                        icon = SunIcons.ChevronDown,
+                        contentDescription = "Jump to latest",
+                        onClick = {
+                            following = true
+                            scope.launch { listState.animateScrollToItem(itemCount - 1, 0) }
+                        },
+                        size = 40.dp,
+                        container = colors.surfaceContainerHighest,
+                    )
                 }
             }
 
@@ -177,11 +245,34 @@ fun ChatScreen(
                 }
             }
 
+            AnimatedVisibility(
+                visible = editingId != null,
+                enter = fadeIn(Motion.enter()) + expandVertically(Motion.enter()),
+                exit = fadeOut(Motion.exit()) + shrinkVertically(Motion.exit()),
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().padding(start = 24.dp, end = 16.dp, top = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Editing message", style = MaterialTheme.typography.labelMedium, color = colors.primary, modifier = Modifier.weight(1f))
+                    SunButton(
+                        "Cancel",
+                        {
+                            editingId = null
+                            input = ""
+                        },
+                        style = SunButtonStyle.Ghost,
+                    )
+                }
+            }
+
             Composer(
                 text = input,
                 onTextChange = { input = it },
                 onSend = {
-                    onSend(input)
+                    val editing = editingId
+                    if (editing != null) onEdit(editing, input) else onSend(input)
+                    editingId = null
                     input = ""
                     haptics.confirm()
                 },
@@ -218,19 +309,19 @@ private fun ModelSubtitle(
     onOpenModels: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
-    val (text, color) =
+    val style = MaterialTheme.typography.labelMedium
+    Row(Modifier.clickable(onClick = onOpenModels), verticalAlignment = Alignment.CenterVertically) {
         when (model) {
-            is ModelStatus.Ready -> "${model.name} · ${model.backend}" to colors.tertiary
-            is ModelStatus.Loading -> "Loading ${model.name}…" to colors.onSurfaceVariant
-            ModelStatus.None -> "No model loaded" to colors.onSurfaceVariant
+            is ModelStatus.Ready -> {
+                // Long GGUF names are shortened in the middle so the backend always shows.
+                Text(model.name, style = style, color = colors.tertiary, maxLines = 1, overflow = TextOverflow.MiddleEllipsis, modifier = Modifier.weight(1f, fill = false))
+                Text("  ·  ${model.backend}", style = style, color = colors.tertiary, maxLines = 1)
+            }
+            is ModelStatus.Loading ->
+                Text("Loading ${model.name}…", style = style, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.MiddleEllipsis)
+            ModelStatus.None -> Text("No model loaded", style = style, color = colors.onSurfaceVariant, maxLines = 1)
         }
-    Text(
-        text,
-        style = MaterialTheme.typography.labelMedium,
-        color = color,
-        maxLines = 1,
-        modifier = Modifier.clickable(onClick = onOpenModels),
-    )
+    }
 }
 
 @Composable
@@ -241,10 +332,14 @@ private fun EmptyChat(modifier: Modifier = Modifier) {
 @Composable
 private fun UserMessage(
     text: String,
+    showActions: Boolean,
+    onTap: () -> Unit,
+    onCopy: () -> Unit,
+    onEdit: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
-    Box(modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+    Column(modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
         SelectionContainer {
             Text(
                 text,
@@ -255,8 +350,13 @@ private fun UserMessage(
                         .widthIn(max = 320.dp)
                         .clip(RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp, bottomStart = 22.dp, bottomEnd = 6.dp))
                         .background(colors.primaryContainer)
+                        .clickable(onClick = onTap)
                         .padding(horizontal = 16.dp, vertical = 11.dp),
             )
+        }
+        MessageActions(showActions) {
+            ActionButton(SunIcons.Copy, "Copy", onCopy)
+            if (onEdit != null) ActionButton(SunIcons.Edit, "Edit", onEdit)
         }
     }
 }
@@ -268,6 +368,10 @@ private fun AssistantMessage(
     thinkingOpen: Boolean,
     working: Boolean,
     stats: String?,
+    showActions: Boolean,
+    onTap: () -> Unit,
+    onCopy: () -> Unit,
+    onRegenerate: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -280,14 +384,57 @@ private fun AssistantMessage(
             }
             if (content.isNotEmpty()) {
                 SelectionContainer {
-                    Text(content, style = MaterialTheme.typography.bodyLarge, color = colors.onBackground)
+                    MarkdownText(content, Modifier.clickable(interactionSource = null, indication = null, onClick = onTap))
                 }
             }
-            if (stats != null) {
+            if (stats != null && !showActions) {
                 Text(stats, style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant.copy(alpha = 0.7f))
+            }
+            MessageActions(showActions) {
+                ActionButton(SunIcons.Copy, "Copy", onCopy)
+                if (onRegenerate != null) ActionButton(SunIcons.Regenerate, "Regenerate", onRegenerate)
+                if (stats != null) {
+                    Text(
+                        stats,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.onSurfaceVariant.copy(alpha = 0.7f),
+                        modifier = Modifier.padding(start = 6.dp),
+                    )
+                }
             }
         }
     }
+}
+
+/** A quiet row of icon buttons that folds in and out. */
+@Composable
+private fun MessageActions(
+    visible: Boolean,
+    content: @Composable () -> Unit,
+) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(Motion.enter()) + expandVertically(Motion.enter()),
+        exit = fadeOut(Motion.exit()) + shrinkVertically(Motion.exit()),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) { content() }
+    }
+}
+
+@Composable
+private fun ActionButton(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+) {
+    SunIconButton(
+        icon = icon,
+        contentDescription = label,
+        onClick = onClick,
+        size = 34.dp,
+        container = Color.Transparent,
+        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 /** Reasoning stays folded away unless the user opens it. */

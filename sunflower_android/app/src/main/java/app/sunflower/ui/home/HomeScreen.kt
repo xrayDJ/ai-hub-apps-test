@@ -2,6 +2,16 @@ package app.sunflower.ui.home
 
 import android.text.format.DateUtils
 import androidx.compose.animation.core.animateFloatAsState
+import app.sunflower.ui.components.rememberHaptics
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -59,8 +69,10 @@ fun HomeScreen(
     onNewChat: () -> Unit,
     onOpenChat: (String) -> Unit,
     onOpenModels: () -> Unit,
+    onDelete: (String) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
+    var confirmingId by remember { mutableStateOf<String?>(null) }
     Box(
         Modifier
             .fillMaxSize()
@@ -99,7 +111,20 @@ fun HomeScreen(
                     )
                 }
                 items(state.conversations, key = { it.id }) { conversation ->
-                    ConversationRow(conversation, { onOpenChat(conversation.id) }, Modifier.animateItem())
+                    ConversationRow(
+                        conversation = conversation,
+                        confirming = confirmingId == conversation.id,
+                        onClick = {
+                            if (confirmingId != null) confirmingId = null else onOpenChat(conversation.id)
+                        },
+                        onLongClick = { confirmingId = conversation.id },
+                        onDelete = {
+                            confirmingId = null
+                            onDelete(conversation.id)
+                        },
+                        onCancel = { confirmingId = null },
+                        modifier = Modifier.animateItem(),
+                    )
                 }
             }
         }
@@ -209,13 +234,19 @@ private fun StatusDot(
     )
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ConversationRow(
     conversation: ConversationEntity,
+    confirming: Boolean,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    onDelete: () -> Unit,
+    onCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
+    val haptics = rememberHaptics()
     val source = remember { MutableInteractionSource() }
     Row(
         modifier
@@ -223,32 +254,63 @@ private fun ConversationRow(
             .pressScale(source, 0.98f)
             .clip(MaterialTheme.shapes.large)
             .background(colors.surfaceContainerLow)
-            .clickable(source, ripple(), onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 16.dp),
+            .combinedClickable(
+                interactionSource = source,
+                indication = ripple(),
+                onClick = onClick,
+                onLongClick = {
+                    haptics.confirm()
+                    onLongClick()
+                },
+            ).padding(start = 18.dp, end = 8.dp, top = 10.dp, bottom = 10.dp)
+            .heightIn(min = 44.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                conversation.title,
-                style = MaterialTheme.typography.titleMedium,
-                color = colors.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                conversation.modelName ?: "No model yet",
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+        AnimatedContent(
+            targetState = confirming,
+            transitionSpec = { fadeIn(Motion.enter()) togetherWith fadeOut(Motion.exit()) },
+            label = "rowConfirm",
+            modifier = Modifier.weight(1f),
+        ) { isConfirming ->
+            if (isConfirming) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Delete this chat?",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = colors.onSurface,
+                        modifier = Modifier.weight(1f),
+                    )
+                    SunButton("Cancel", onCancel, style = SunButtonStyle.Ghost)
+                    SunButton("Delete", onDelete, style = SunButtonStyle.Tonal)
+                }
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            conversation.title,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = colors.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            conversation.modelName ?: "No model yet",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.MiddleEllipsis,
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        DateUtils.getRelativeTimeSpanString(conversation.updatedAt, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS).toString(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.onSurfaceVariant,
+                        modifier = Modifier.padding(end = 10.dp),
+                    )
+                }
+            }
         }
-        Spacer(Modifier.width(12.dp))
-        Text(
-            DateUtils.getRelativeTimeSpanString(conversation.updatedAt, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS).toString(),
-            style = MaterialTheme.typography.labelSmall,
-            color = colors.onSurfaceVariant,
-        )
     }
 }
 

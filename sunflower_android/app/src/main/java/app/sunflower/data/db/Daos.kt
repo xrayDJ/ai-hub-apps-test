@@ -36,6 +36,13 @@ interface MessageDao {
 
     @Query("DELETE FROM messages WHERE id = :id")
     suspend fun delete(id: String)
+
+    /** Removes a message and everything after it, for edit-and-resend. */
+    @Query("DELETE FROM messages WHERE conversationId = :conversationId AND createdAt >= :createdAt")
+    suspend fun deleteFrom(
+        conversationId: String,
+        createdAt: Long,
+    )
 }
 
 @Dao

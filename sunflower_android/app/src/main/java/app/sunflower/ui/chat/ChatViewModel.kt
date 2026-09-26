@@ -141,6 +141,35 @@ class ChatViewModel(
         }
     }
 
+    /** Replaces the last reply with a fresh one. */
+    fun regenerate() {
+        val id = conversationId.value ?: return
+        if (!state.value.canSend) return
+        engine.dismissFailure()
+        viewModelScope.launch {
+            val last = repository.messages(id).lastOrNull() ?: return@launch
+            if (last.role == ConversationRepository.ROLE_ASSISTANT) repository.deleteMessage(last.id)
+            startReply(id)
+        }
+    }
+
+    /** Resends an edited message, dropping it and everything after it. */
+    fun sendEdit(
+        messageId: String,
+        text: String,
+    ) {
+        val id = conversationId.value ?: return
+        val trimmed = text.trim()
+        if (trimmed.isEmpty() || !state.value.canSend) return
+        engine.dismissFailure()
+        viewModelScope.launch {
+            val original = repository.messages(id).firstOrNull { it.id == messageId } ?: return@launch
+            repository.deleteFrom(original)
+            repository.addUserMessage(id, trimmed)
+            startReply(id)
+        }
+    }
+
     fun stop() {
         viewModelScope.launch { engine.stop() }
     }

@@ -87,6 +87,10 @@ class ConversationRepository(
         dao.upsert(conversation.copy(systemPrompt = systemPrompt))
     }
 
+    suspend fun deleteMessage(id: String) = database().messages().delete(id)
+
+    suspend fun deleteFrom(message: MessageEntity) = database().messages().deleteFrom(message.conversationId, message.createdAt)
+
     suspend fun deleteConversation(id: String) = database().conversations().delete(id)
 
     private fun titleFrom(text: String): String {

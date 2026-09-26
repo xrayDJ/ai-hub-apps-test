@@ -78,6 +78,28 @@ object SunIcons {
             moveTo(6f, 9f); lineTo(12f, 15f); lineTo(18f, 9f)
         }
 
+    /** Two overlapping sheets: copy. */
+    val Copy =
+        icon("Copy") {
+            moveTo(9f, 9f); lineTo(20f, 9f); lineTo(20f, 20f); lineTo(9f, 20f); close()
+            moveTo(5f, 15f); lineTo(4f, 15f); lineTo(4f, 4f); lineTo(15f, 4f); lineTo(15f, 5f)
+        }
+
+    /** Circular arrow: regenerate. */
+    val Regenerate =
+        icon("Regenerate") {
+            moveTo(20f, 11f)
+            arcTo(8f, 8f, 0f, true, false, 17.66f, 17.66f)
+            moveTo(20f, 4f); lineTo(20f, 11f); lineTo(13f, 11f)
+        }
+
+    /** Pencil: edit. */
+    val Edit =
+        icon("Edit") {
+            moveTo(4f, 20f); lineTo(8f, 19f); lineTo(19f, 8f); lineTo(16f, 5f); lineTo(5f, 16f); close()
+            moveTo(14f, 7f); lineTo(17f, 10f)
+        }
+
     /** Padlock: encryption status. */
     val Lock =
         icon("Lock") {
