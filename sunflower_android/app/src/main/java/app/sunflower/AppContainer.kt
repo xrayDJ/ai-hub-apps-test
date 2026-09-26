@@ -3,6 +3,7 @@ package app.sunflower
 import android.content.Context
 import app.sunflower.data.ConversationRepository
 import app.sunflower.data.ModelLibrary
+import app.sunflower.data.PromptLibrary
 import app.sunflower.data.db.SunflowerDatabase
 import app.sunflower.engine.GenieXRuntime
 import app.sunflower.engine.InferenceEngine
@@ -24,6 +25,8 @@ class AppContainer(context: Context) {
     val conversations = ConversationRepository { database.await() }
 
     val models = ModelLibrary(context) { database.await() }
+
+    val prompts = PromptLibrary { database.await() }
 
     val runtime = GenieXRuntime(context, appScope)
 

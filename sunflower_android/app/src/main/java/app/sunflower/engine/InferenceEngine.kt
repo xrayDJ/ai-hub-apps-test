@@ -57,7 +57,7 @@ sealed interface BackendChoice {
 }
 
 class InferenceEngine(
-    context: Context,
+    private val context: Context,
     private val runtime: GenieXRuntime,
     private val library: ModelLibrary,
     private val conversations: ConversationRepository,
@@ -293,6 +293,7 @@ class InferenceEngine(
         _failure.value = null
         val messageId = UUID.randomUUID().toString()
         _generation.value = Generation(conversationId, messageId)
+        GenerationService.start(context, conversationId)
         generateJob =
             scope.launch {
                 mutex.withLock { generateLocked(ready, conversationId, messageId, systemPrompt, history) }

@@ -47,11 +47,26 @@ interface MessageDao {
 
 @Dao
 interface SystemPromptDao {
-    @Query("SELECT * FROM system_prompts ORDER BY createdAt ASC")
+    @Query("SELECT * FROM system_prompts ORDER BY isDefault DESC, name COLLATE NOCASE ASC")
     fun observeAll(): Flow<List<SystemPromptEntity>>
+
+    @Query("SELECT * FROM system_prompts WHERE isDefault = 1 LIMIT 1")
+    suspend fun getDefault(): SystemPromptEntity?
+
+    @Query("SELECT * FROM system_prompts WHERE name = :name COLLATE NOCASE LIMIT 1")
+    suspend fun findByName(name: String): SystemPromptEntity?
+
+    @Query("SELECT * FROM system_prompts WHERE id = :id")
+    suspend fun get(id: String): SystemPromptEntity?
 
     @Upsert
     suspend fun upsert(prompt: SystemPromptEntity)
+
+    @Query("UPDATE system_prompts SET isDefault = (id = :id)")
+    suspend fun makeDefault(id: String)
+
+    @Query("UPDATE system_prompts SET isDefault = 0")
+    suspend fun clearDefault()
 
     @Query("DELETE FROM system_prompts WHERE id = :id")
     suspend fun delete(id: String)

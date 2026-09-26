@@ -1,5 +1,6 @@
 package app.sunflower.data.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -54,6 +55,8 @@ data class SystemPromptEntity(
     val name: String,
     val content: String,
     val createdAt: Long,
+    /** Used as the system prompt of every new chat. At most one prompt has this set. */
+    @ColumnInfo(defaultValue = "0") val isDefault: Boolean = false,
 )
 
 /** A GGUF the user imported. The file itself stays where the user keeps it unless copied in. */

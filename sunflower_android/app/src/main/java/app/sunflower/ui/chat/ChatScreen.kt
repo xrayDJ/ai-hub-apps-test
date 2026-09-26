@@ -1,6 +1,11 @@
 package app.sunflower.ui.chat
 
-import androidx.activity.compose.BackHandler
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -97,6 +102,7 @@ fun ChatScreen(
     onBack: () -> Unit,
     onOpenModels: () -> Unit,
     onOpenSettings: (modelId: String) -> Unit,
+    promptActions: PromptLibraryActions,
 ) {
     val colors = MaterialTheme.colorScheme
     val haptics = rememberHaptics()
@@ -106,6 +112,16 @@ fun ChatScreen(
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    // Asked once, on the first message: lets the "writing a reply" notification show while in the background.
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    fun askForNotificationsOnce() {
+        val prefs = context.getSharedPreferences("ui", Context.MODE_PRIVATE)
+        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        if (!granted && !prefs.getBoolean("asked_notifications", false)) {
+            prefs.edit().putBoolean("asked_notifications", true).apply()
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
     val listState = rememberLazyListState()
     val lastUserId = state.messages.lastOrNull { it.role == ConversationRepository.ROLE_USER }?.id
     val lastId = state.messages.lastOrNull()?.id
@@ -148,6 +164,11 @@ fun ChatScreen(
                     SunIconButton(SunIcons.Script, "System prompt", { editingPrompt = true })
                 },
             )
+
+            val contextSize = state.contextSize
+            if (contextSize != null && state.messages.isNotEmpty()) {
+                ContextMeter(used = state.contextUsed, size = contextSize, replyReserve = state.replyReserve)
+            }
 
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 if (itemCount == 0) {
@@ -286,6 +307,7 @@ fun ChatScreen(
                 text = input,
                 onTextChange = { input = it },
                 onSend = {
+                    askForNotificationsOnce()
                     val editing = editingId
                     if (editing != null) onEdit(editing, input) else onSend(input)
                     editingId = null
@@ -309,6 +331,8 @@ fun ChatScreen(
         ) {
             SystemPromptEditor(
                 initial = state.systemPrompt,
+                library = state.promptLibrary,
+                actions = promptActions,
                 onSave = {
                     onSystemPromptChange(it)
                     editingPrompt = false
@@ -509,55 +533,3 @@ private fun statsLine(message: MessageEntity): String? {
     return parts.joinToString("  ·  ")
 }
 
-@Composable
-private fun SystemPromptEditor(
-    initial: String,
-    onSave: (String) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val colors = MaterialTheme.colorScheme
-    var text by rememberSaveable(initial) { mutableStateOf(initial) }
-    BackHandler(onBack = onDismiss)
-    Column(
-        Modifier
-            .fillMaxSize()
-            .background(colors.background)
-            .statusBarsPadding()
-            .imePadding()
-            .navigationBarsPadding()
-            .padding(20.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            SunIconButton(Icons.Filled.Close, "Close", onDismiss)
-            Spacer(Modifier.weight(1f))
-            SunButton("Save", { onSave(text.trim()) }, icon = Icons.Filled.Check, enabled = text.isNotBlank())
-        }
-        var explain by rememberSaveable { mutableStateOf(false) }
-        Row(Modifier.padding(top = 24.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("System prompt", style = MaterialTheme.typography.displaySmall, color = colors.onBackground)
-            Spacer(Modifier.size(6.dp))
-            InfoHintButton(explain, { explain = !explain })
-        }
-        InfoHintText(explain, "Instructions the model reads before every message in this chat: its role, tone and rules.")
-        Spacer(Modifier.size(12.dp))
-        BasicTextField(
-            value = text,
-            onValueChange = { text = it },
-            textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.onSurface),
-            cursorBrush = SolidColor(colors.primary),
-            modifier =
-                Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .clip(MaterialTheme.shapes.large)
-                    .background(colors.surfaceContainer)
-                    .padding(18.dp),
-        )
-        SunButton(
-            "Reset to default",
-            { text = app.sunflower.data.DEFAULT_SYSTEM_PROMPT },
-            style = SunButtonStyle.Ghost,
-            modifier = Modifier.padding(top = 8.dp),
-        )
-    }
-}

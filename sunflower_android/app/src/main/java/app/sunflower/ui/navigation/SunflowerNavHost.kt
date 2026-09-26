@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedContentTransitionScope.SlideDirection
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.platform.LocalContext
@@ -12,6 +13,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.toRoute
 import app.sunflower.appContainer
 import app.sunflower.ui.chat.ChatScreen
@@ -40,9 +42,21 @@ data class ModelSettingsRoute(val modelId: String, val conversationId: String? =
 data class ChatRoute(val conversationId: String? = null)
 
 @Composable
-fun SunflowerNavHost() {
+fun SunflowerNavHost(
+    openChat: String? = null,
+    onOpenedChat: () -> Unit = {},
+) {
     val nav = rememberNavController()
     val container = LocalContext.current.appContainer
+
+    LaunchedEffect(openChat) {
+        if (openChat != null) {
+            val entry = nav.currentBackStackEntry
+            val showing = entry?.destination?.hasRoute<ChatRoute>() == true && entry.toRoute<ChatRoute>().conversationId == openChat
+            if (!showing) nav.navigate(ChatRoute(openChat)) { launchSingleTop = true }
+            onOpenedChat()
+        }
+    }
 
     NavHost(
         navController = nav,
@@ -82,7 +96,7 @@ fun SunflowerNavHost() {
         }
         composable<ChatRoute> { entry ->
             val route = entry.toRoute<ChatRoute>()
-            val vm = viewModel { ChatViewModel(route.conversationId, container.conversations, container.engine) }
+            val vm = viewModel { ChatViewModel(route.conversationId, container.conversations, container.engine, container.prompts) }
             val state by vm.state.collectAsStateWithLifecycle()
             ChatScreen(
                 state = state,
@@ -95,6 +109,7 @@ fun SunflowerNavHost() {
                 onBack = { nav.popBackStack() },
                 onOpenModels = { nav.navigate(ModelsRoute) },
                 onOpenSettings = { modelId -> nav.navigate(ModelSettingsRoute(modelId, vm.savedConversationId)) },
+                promptActions = vm.promptActions,
             )
         }
         composable<ModelSettingsRoute> { entry ->
