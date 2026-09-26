@@ -25,7 +25,7 @@ data class HomeState(
 class HomeViewModel(
     private val repository: ConversationRepository,
     runtime: GenieXRuntime,
-    engine: InferenceEngine,
+    private val engine: InferenceEngine,
 ) : ViewModel() {
     private val conversations =
         repository
@@ -45,6 +45,10 @@ class HomeViewModel(
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeState())
 
     fun delete(id: String) {
-        viewModelScope.launch { repository.deleteConversation(id) }
+        viewModelScope.launch {
+            // A reply still being written into this chat would try to save into a deleted conversation.
+            if (engine.generation.value?.conversationId == id) engine.stop()
+            repository.deleteConversation(id)
+        }
     }
 }

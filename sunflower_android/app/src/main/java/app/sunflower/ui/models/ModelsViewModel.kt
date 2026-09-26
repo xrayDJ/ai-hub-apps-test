@@ -8,6 +8,8 @@ import app.sunflower.data.db.ModelEntity
 import app.sunflower.engine.CrashReport
 import app.sunflower.engine.InferenceEngine
 import app.sunflower.engine.NotGgufException
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -86,6 +88,30 @@ class ModelsViewModel(
 
     fun load(model: ModelEntity) = engine.load(model)
 
+    fun loadAnyway(model: ModelEntity) = engine.load(model, force = true)
+
+    /** Re-links a model whose file moved, then loads it. */
+    fun relink(
+        model: ModelEntity,
+        uri: Uri,
+    ) {
+        viewModelScope.launch {
+            try {
+                library.relink(model.id, uri)?.let { engine.load(it) }
+            } catch (e: NotGgufException) {
+                importError.value = "That file isn't a GGUF model."
+            } catch (e: Exception) {
+                importError.value = "Couldn't use that file: ${e.message ?: e.javaClass.simpleName}"
+            }
+        }
+    }
+
+    private val copyJobs = mutableMapOf<String, Job>()
+
+    fun cancelCopy(model: ModelEntity) {
+        copyJobs.remove(model.id)?.cancel()
+    }
+
     /** The backend picked on the card is the model's saved setting, shared with the settings screen. */
     fun setBackend(
         model: ModelEntity,
@@ -109,7 +135,12 @@ class ModelsViewModel(
     /** Copies the file into app storage, then loads it from there. */
     fun copyIntoApp(model: ModelEntity) {
         if (model.id in copying.value) return
-        viewModelScope.launch {
+        library.copyShortfall(model)?.let {
+            importError.value = it
+            return
+        }
+        copyJobs[model.id] =
+            viewModelScope.launch {
             copying.update { it + (model.id to 0f) }
             try {
                 var lastStep = -1
@@ -121,10 +152,13 @@ class ModelsViewModel(
                     }
                 }
                 library.get(model.id)?.let { engine.load(it) }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 importError.value = "Copy failed: ${e.message ?: e.javaClass.simpleName}"
             } finally {
                 copying.update { it - model.id }
+                copyJobs.remove(model.id)
             }
         }
     }

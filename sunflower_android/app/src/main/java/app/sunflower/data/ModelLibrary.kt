@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.os.Environment
 import android.provider.OpenableColumns
+import android.text.format.Formatter
 import android.system.Os
 import app.sunflower.data.db.ModelEntity
 import app.sunflower.data.db.SunflowerDatabase
@@ -122,6 +123,55 @@ class ModelLibrary(
         return candidates.firstOrNull { it.startsWith("/") && File(it).canRead() }
     }
 
+    /**
+     * Points a model at a new copy of its file (after it was moved or renamed).
+     * The new file must be a GGUF; its header refreshes what Sunflower shows.
+     */
+    suspend fun relink(
+        id: String,
+        uri: Uri,
+    ): ModelEntity? =
+        withContext(Dispatchers.IO) {
+            val dao = database().models()
+            val model = dao.get(id) ?: return@withContext null
+            resolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            val info =
+                try {
+                    resolver.openInputStream(uri)?.use { GgufReader.read(it) } ?: error("Couldn't open the file")
+                } catch (e: Exception) {
+                    releasePermission(uri)
+                    throw e
+                }
+            if (model.uri != uri.toString()) releasePermission(Uri.parse(model.uri))
+            val (fileName, size) = describe(uri)
+            val updated =
+                model.copy(
+                    uri = uri.toString(),
+                    fileName = fileName,
+                    sizeBytes = size,
+                    name = info.name,
+                    architecture = info.architecture,
+                    sizeLabel = info.sizeLabel,
+                    quantization = info.quantization,
+                    contextLength = info.contextLength,
+                    layerCount = info.layerCount,
+                    hasChatTemplate = info.hasChatTemplate,
+                    nextnLayers = info.nextnLayers ?: 0,
+                )
+            dao.upsert(updated)
+            infoCache.remove(id)
+            updated
+        }
+
+    /** Free space for a private copy, or null if it fits. */
+    fun copyShortfall(model: ModelEntity): String? {
+        val free = android.os.StatFs(appContext.filesDir.path).availableBytes
+        val needed = model.sizeBytes + COPY_HEADROOM
+        if (model.sizeBytes <= 0 || free >= needed) return null
+        return "Copying needs ${Formatter.formatShortFileSize(appContext, model.sizeBytes)} of free space; " +
+            "${Formatter.formatShortFileSize(appContext, free)} is free."
+    }
+
     /** Copies the file into app storage, for devices where direct access fails. */
     suspend fun copyIntoApp(
         id: String,
@@ -234,6 +284,9 @@ class ModelLibrary(
         runCatching { resolver.releasePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
     }
 }
+
+/** Space kept free after a copy so the phone isn't left completely full. */
+private const val COPY_HEADROOM = 512L * 1024 * 1024
 
 fun ModelEntity.failedSet(): Set<String> = failedBackends.split(',').filter { it.isNotBlank() }.toSet()
 

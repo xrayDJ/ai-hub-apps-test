@@ -70,6 +70,7 @@ fun HomeScreen(
     onOpenChat: (String) -> Unit,
     onOpenModels: () -> Unit,
     onDelete: (String) -> Unit,
+    onResetStorage: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
     var confirmingId by remember { mutableStateOf<String?>(null) }
@@ -100,7 +101,7 @@ fun HomeScreen(
             item { Header(onOpenModels, Modifier.statusBarsPadding()) }
             item { ModelCard(state.runtime, state.engine, onOpenModels, Modifier.padding(top = 24.dp)) }
             if (state.storageError != null) {
-                item { Notice("Couldn't open saved chats: ${state.storageError}") }
+                item { StorageRecovery(state.storageError, onResetStorage) }
             } else if (state.conversations.isNotEmpty()) {
                 item {
                     Text(
@@ -310,6 +311,41 @@ private fun ConversationRow(
                     )
                 }
             }
+        }
+    }
+}
+
+/** The encrypted database couldn't be opened: explain, and offer a clean start. */
+@Composable
+private fun StorageRecovery(
+    error: String,
+    onReset: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    var confirming by remember { mutableStateOf(false) }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.large)
+            .border(1.dp, colors.error.copy(alpha = 0.5f), MaterialTheme.shapes.large)
+            .padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text("Saved chats can't be opened", style = MaterialTheme.typography.titleMedium, color = colors.onSurface)
+        Text(
+            "The encrypted storage or its key is damaged ($error). Resetting erases saved chats, prompts and model settings " +
+                "and starts fresh. Model files on your phone are not touched.",
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.onSurfaceVariant,
+        )
+        if (confirming) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Erase and restart?", style = MaterialTheme.typography.labelLarge, color = colors.error, modifier = Modifier.weight(1f))
+                SunButton("Cancel", { confirming = false }, style = SunButtonStyle.Ghost)
+                SunButton("Reset", onReset, style = SunButtonStyle.Tonal)
+            }
+        } else {
+            SunButton("Reset storage", { confirming = true }, style = SunButtonStyle.Tonal)
         }
     }
 }

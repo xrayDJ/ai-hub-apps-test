@@ -94,7 +94,17 @@ fun ModelsScreen(
     onResume: () -> Unit,
     onDismissCrash: (ModelEntity) -> Unit,
     onRetryCrashedBackends: (ModelEntity) -> Unit,
+    onLoadAnyway: (ModelEntity) -> Unit,
+    onRelink: (ModelEntity, Uri) -> Unit,
+    onCancelCopy: (ModelEntity) -> Unit,
 ) {
+    var relinking by rememberSaveable { mutableStateOf<String?>(null) }
+    val relinkPicker =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+            val target = state.models.firstOrNull { it.id == relinking }
+            if (uri != null && target != null) onRelink(target, uri)
+            relinking = null
+        }
     val context = LocalContext.current
     LifecycleResumeEffect(Unit) {
         onResume()
@@ -148,6 +158,12 @@ fun ModelsScreen(
                             openAllFilesAccessSettings(context)
                         },
                         crashReport = state.crashReports[model.id],
+                        onLoadAnyway = { onLoadAnyway(model) },
+                        onLocateFile = {
+                            relinking = model.id
+                            relinkPicker.launch(arrayOf("*/*"))
+                        },
+                        onCancelCopy = { onCancelCopy(model) },
                         onDismissCrash = { onDismissCrash(model) },
                         onRetryCrashedBackends = { onRetryCrashedBackends(model) },
                         modifier = Modifier.animateItem(),
@@ -200,6 +216,9 @@ private fun ModelCard(
     onCopyIntoApp: () -> Unit,
     onAllowFileAccess: () -> Unit,
     crashReport: CrashReport?,
+    onLoadAnyway: () -> Unit,
+    onLocateFile: () -> Unit,
+    onCancelCopy: () -> Unit,
     onDismissCrash: () -> Unit,
     onRetryCrashedBackends: () -> Unit,
     modifier: Modifier = Modifier,
@@ -252,7 +271,15 @@ private fun ModelCard(
                 )
             copyProgress != null -> {
                 SunProgress(copyProgress)
-                Text("Copying ${(copyProgress * 100).toInt()}%", style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Copying ${(copyProgress * 100).toInt()}%",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = colors.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    SunButton("Cancel", onCancelCopy, style = SunButtonStyle.Ghost)
+                }
             }
             mine && engine is InferenceEngine.State.Loading ->
                 StatusRow(spinning = true, text = "Loading on ${engine.backend.label}…")
@@ -261,6 +288,17 @@ private fun ModelCard(
                     StatusRow(spinning = false, text = "Running on ${engine.backend.label}", modifier = Modifier.weight(1f))
                     SunButton("Unload", onUnload, style = SunButtonStyle.Ghost)
                 }
+            mine && engine is InferenceEngine.State.Failed && engine.fileMissing -> {
+                Text(engine.message, style = MaterialTheme.typography.bodySmall, color = colors.error)
+                SunButton("Locate file", onLocateFile, style = SunButtonStyle.Tonal)
+            }
+            mine && engine is InferenceEngine.State.Failed && engine.tooBig -> {
+                Text(engine.message, style = MaterialTheme.typography.bodySmall, color = colors.onSurface)
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    SunButton("Load anyway", onLoadAnyway, style = SunButtonStyle.Ghost, enabled = !busy)
+                    SunButton("Settings", onOpenSettings, style = SunButtonStyle.Tonal)
+                }
+            }
             mine && engine is InferenceEngine.State.Failed -> {
                 Text(engine.message, style = MaterialTheme.typography.bodySmall, color = colors.error, maxLines = 4, overflow = TextOverflow.Ellipsis)
                 SunButton("Try again", onLoad, style = SunButtonStyle.Tonal, enabled = !busy)

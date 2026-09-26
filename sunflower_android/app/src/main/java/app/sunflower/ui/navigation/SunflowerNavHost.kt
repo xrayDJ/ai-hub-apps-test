@@ -75,6 +75,7 @@ fun SunflowerNavHost(
                 onOpenChat = { nav.navigate(ChatRoute(it)) },
                 onOpenModels = { nav.navigate(ModelsRoute) },
                 onDelete = vm::delete,
+                onResetStorage = container::wipeAndRestart,
             )
         }
         composable<ModelsRoute> {
@@ -94,6 +95,9 @@ fun SunflowerNavHost(
                 onResume = vm::onResume,
                 onDismissCrash = vm::dismissCrash,
                 onRetryCrashedBackends = vm::retryCrashedBackends,
+                onLoadAnyway = vm::loadAnyway,
+                onRelink = vm::relink,
+                onCancelCopy = vm::cancelCopy,
             )
         }
         composable<ChatRoute> { entry ->

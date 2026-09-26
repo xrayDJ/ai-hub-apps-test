@@ -1,5 +1,6 @@
 package app.sunflower.engine
 
+import android.app.ActivityManager
 import android.content.Context
 import android.os.SystemClock
 import android.util.Log
@@ -85,6 +86,10 @@ class InferenceEngine(
             val canCopyIntoApp: Boolean,
             /** Granting "All files access" would let the engine read the file in place. */
             val canGrantFileAccess: Boolean = false,
+            /** The file moved, was renamed or deleted; the user can point Sunflower at it again. */
+            val fileMissing: Boolean = false,
+            /** Loading was not attempted: it clearly can't fit in memory. "Load anyway" overrides. */
+            val tooBig: Boolean = false,
         ) : State
     }
 
@@ -189,13 +194,15 @@ class InferenceEngine(
     fun load(
         model: ModelEntity,
         choice: BackendChoice? = null,
+        /** Skip the memory check (the user chose "Load anyway"). */
+        force: Boolean = false,
     ) {
         if (_state.value is State.Loading || generateJob?.isActive == true) return
         loadJob =
             scope.launch {
                 mutex.withLock {
                     releaseLocked()
-                    loadLocked(model, choice)
+                    loadLocked(model, choice, force)
                 }
             }
     }
@@ -213,6 +220,7 @@ class InferenceEngine(
     private suspend fun loadLocked(
         requestedModel: ModelEntity,
         requested: BackendChoice?,
+        force: Boolean,
     ) {
         // Settings may have changed since the caller read the model.
         val model = library.get(requestedModel.id) ?: requestedModel
@@ -232,12 +240,26 @@ class InferenceEngine(
             return
         }
 
+        if (!force) {
+            memoryShortfall(model, settings)?.let { message ->
+                _state.value = State.Failed(model, message, canCopyIntoApp = false, tooBig = true)
+                return
+            }
+        }
+
         val candidates = candidatesFor(model, choice)
         val opened =
             try {
                 library.open(model)
             } catch (e: Exception) {
-                _state.value = State.Failed(model, e.message ?: "Couldn't open the file", model.localPath == null)
+                // Missing, moved, renamed, or the read grant was revoked: offer to locate it again.
+                _state.value =
+                    State.Failed(
+                        model,
+                        "The model file isn't where it was imported from. It may have been moved, renamed or deleted.",
+                        canCopyIntoApp = false,
+                        fileMissing = true,
+                    )
                 return
             }
 
@@ -284,6 +306,28 @@ class InferenceEngine(
                 canCopyIntoApp = inPlace,
                 canGrantFileAccess = inPlace && !library.hasAllFilesAccess(),
             )
+    }
+
+    /**
+     * A message when the model plus its context memory clearly can't fit in this
+     * phone's RAM; null when it can or might. Weights are memory-mapped and can
+     * page, so only warn when the total is beyond most of physical memory.
+     */
+    private suspend fun memoryShortfall(
+        model: ModelEntity,
+        settings: ModelSettings,
+    ): String? {
+        val am = context.getSystemService(ActivityManager::class.java) ?: return null
+        val memory = ActivityManager.MemoryInfo().also { am.getMemoryInfo(it) }
+        val cores = Runtime.getRuntime().availableProcessors()
+        val contextSize = settings.load.resolve(Backend.CPU, model.contextLength, cores).contextSize
+        val kv = library.info(model)?.kvCacheBytes(contextSize) ?: 0L
+        val needed = model.sizeBytes.coerceAtLeast(0) + kv
+        if (needed <= memory.totalMem * MAX_MEMORY_SHARE) return null
+        fun gb(bytes: Long) = String.format(java.util.Locale.US, "%.1f GB", bytes / 1_073_741_824.0)
+        return "This model needs about ${gb(needed)} of memory with a $contextSize-token context, " +
+            "but this phone has ${gb(memory.totalMem)} in total. Loading will most likely fail or be stopped by Android. " +
+            "A smaller context or a smaller quantization of the model would fit better."
     }
 
     /**
@@ -440,6 +484,28 @@ class InferenceEngine(
                     .formattedText
             val openedByPrompt = reasoningOpenedByPrompt(prompt)
             var lastEmit = 0L
+            var lastCheckpoint = SystemClock.uptimeMillis()
+            // Fixed for the reply's lifetime so checkpoints and the final save sort the same.
+            val createdAt = System.currentTimeMillis()
+
+            fun reply(split: ThinkSplit): MessageEntity {
+                val profile = lastProfile
+                return MessageEntity(
+                    id = messageId,
+                    conversationId = conversationId,
+                    role = ConversationRepository.ROLE_ASSISTANT,
+                    content = split.content,
+                    thinking = split.thinking,
+                    createdAt = createdAt,
+                    promptTokens = firstProfile?.promptTokens,
+                    generatedTokens = generated,
+                    ttftMs = firstProfile?.ttftMs,
+                    decodeTokensPerSec = profile?.decodingSpeed,
+                    draftTokens = profile?.draftNTotal?.takeIf { it > 0 },
+                    draftAccepted = profile?.draftNAccepted?.takeIf { (profile?.draftNTotal ?: 0) > 0 },
+                    thinkingMs = thinkingMs ?: thinkingStartedAt?.let { SystemClock.elapsedRealtime() - it },
+                )
+            }
 
             fun publish(): ThinkSplit {
                 val split = splitThinking(raw.toString(), openedByPrompt)
@@ -464,7 +530,13 @@ class InferenceEngine(
                         val now = SystemClock.uptimeMillis()
                         if (now - lastEmit >= FRAME_MS) {
                             lastEmit = now
-                            publish()
+                            val split = publish()
+                            // Save progress now and then, so even if Android kills the app mid-reply
+                            // (low memory, a crash) the text written so far survives.
+                            if (now - lastCheckpoint >= CHECKPOINT_MS && (split.content.isNotBlank() || !split.thinking.isNullOrBlank())) {
+                                lastCheckpoint = now
+                                conversations.addAssistantMessage(reply(split))
+                            }
                         }
                     }
                     is LlmStreamResult.Completed -> {
@@ -479,24 +551,7 @@ class InferenceEngine(
 
             val split = splitThinking(raw.toString(), openedByPrompt)
             if (split.content.isNotBlank() || !split.thinking.isNullOrBlank()) {
-                val profile = lastProfile
-                conversations.addAssistantMessage(
-                    MessageEntity(
-                        id = messageId,
-                        conversationId = conversationId,
-                        role = ConversationRepository.ROLE_ASSISTANT,
-                        content = split.content,
-                        thinking = split.thinking,
-                        createdAt = System.currentTimeMillis(),
-                        promptTokens = firstProfile?.promptTokens,
-                        generatedTokens = generated,
-                        ttftMs = firstProfile?.ttftMs,
-                        decodeTokensPerSec = profile?.decodingSpeed,
-                        draftTokens = profile?.draftNTotal?.takeIf { it > 0 },
-                        draftAccepted = profile?.draftNAccepted?.takeIf { (profile?.draftNTotal ?: 0) > 0 },
-                        thinkingMs = thinkingMs ?: thinkingStartedAt?.let { SystemClock.elapsedRealtime() - it },
-                    ),
-                )
+                conversations.addAssistantMessage(reply(split))
                 conversations.setModelName(conversationId, ready.model.displayName)
             }
         } catch (e: Exception) {
@@ -553,5 +608,7 @@ class InferenceEngine(
         /** Template tokens around the system prompt, kept with it when the window shifts. */
         const val SYSTEM_OVERHEAD = 16
         const val FRAME_MS = 33L
+        const val CHECKPOINT_MS = 3_000L
+        const val MAX_MEMORY_SHARE = 0.8
     }
 }

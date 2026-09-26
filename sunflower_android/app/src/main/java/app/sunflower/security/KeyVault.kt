@@ -43,6 +43,13 @@ class KeyVault(context: Context) {
         return key
     }
 
+    /** Destroys the wrapped database key and the hardware master key. Data encrypted with them is gone for good. */
+    @Synchronized
+    fun destroy() {
+        wrappedKeyFile.delete()
+        runCatching { KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }.deleteEntry(MASTER_ALIAS) }
+    }
+
     /** True when the device can hold keys in a StrongBox secure element. */
     val hasStrongBox: Boolean
         get() = appContext.packageManager.hasSystemFeature(PackageManager.FEATURE_STRONGBOX_KEYSTORE)

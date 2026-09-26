@@ -125,12 +125,18 @@ class ChatViewModel(
     val state: StateFlow<ChatState> =
         combine(stored, live) { s, l ->
             // Drop the held frame as soon as its saved message is in the list.
-            val streaming = l.streaming?.takeIf { gen -> gen !== lingering.value || s.messages.none { it.id == gen.messageId } }
+            // Replies are checkpointed while streaming, so the saved row can lag the live text.
+            // Keep showing the live (or last live) text until the saved row has caught up.
+            val streaming =
+                l.streaming?.takeIf { gen ->
+                    gen !== lingering.value || s.messages.none { it.id == gen.messageId && it.content == gen.content && it.thinking == gen.thinking }
+                }
+            val visible = if (streaming != null) s.messages.filter { it.id != streaming.messageId } else s.messages
             val used =
                 estimateTokens(s.systemPrompt) +
-                    s.messages.sumOf { estimateTokens(it.content) + TURN_OVERHEAD } +
+                    visible.sumOf { estimateTokens(it.content) + TURN_OVERHEAD } +
                     (streaming?.let { estimateTokens(it.content + it.thinking.orEmpty()) + TURN_OVERHEAD } ?: 0)
-            s.copy(model = l.model, streaming = streaming, busyElsewhere = l.busyElsewhere, failure = l.failure, contextUsed = used)
+            s.copy(messages = visible, model = l.model, streaming = streaming, busyElsewhere = l.busyElsewhere, failure = l.failure, contextUsed = used)
         }.catch { emit(ChatState()) }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChatState())
 

@@ -31,4 +31,25 @@ class AppContainer(context: Context) {
     val runtime = GenieXRuntime(context, appScope)
 
     val engine = InferenceEngine(context, runtime, models, conversations, appScope)
+
+    private val appContext = context.applicationContext
+
+    /**
+     * Last resort when the encrypted database can't be opened (e.g. its key was
+     * lost): delete the database, its key and imported-model records, then
+     * restart. Model files the user keeps elsewhere are untouched.
+     */
+    fun wipeAndRestart() {
+        runCatching { engine.unload() }
+        keyVault.destroy()
+        appContext.deleteDatabase("sunflower.db")
+        java.io.File(appContext.filesDir, "models").deleteRecursively()
+        appContext.getSharedPreferences("engine", Context.MODE_PRIVATE).edit().clear().commit()
+        appContext.getSharedPreferences("crash_reports", Context.MODE_PRIVATE).edit().clear().commit()
+        val launch =
+            appContext.packageManager.getLaunchIntentForPackage(appContext.packageName)
+                ?.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        launch?.let { appContext.startActivity(it) }
+        Runtime.getRuntime().exit(0)
+    }
 }
