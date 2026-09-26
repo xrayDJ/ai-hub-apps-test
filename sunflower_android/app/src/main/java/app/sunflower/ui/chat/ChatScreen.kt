@@ -2,7 +2,9 @@ package app.sunflower.ui.chat
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -31,6 +33,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -78,7 +81,9 @@ import app.sunflower.ui.theme.Motion
 import kotlinx.coroutines.launch
 import java.util.Locale
 
-private const val STREAMING_KEY = "streaming"
+/** Items fade and slide in, but vanish at once: fading removals can leave ghost rows behind. */
+private fun Modifier.messageAnimation(scope: LazyItemScope): Modifier =
+    with(scope) { this@messageAnimation.animateItem(fadeInSpec = tween(Motion.MEDIUM), placementSpec = spring(stiffness = Spring.StiffnessMediumLow), fadeOutSpec = null) }
 
 @Composable
 fun ChatScreen(
@@ -103,7 +108,8 @@ fun ChatScreen(
     val listState = rememberLazyListState()
     val lastUserId = state.messages.lastOrNull { it.role == ConversationRepository.ROLE_USER }?.id
     val lastId = state.messages.lastOrNull()?.id
-    val itemCount = state.messages.size + if (state.streaming != null) 1 else 0
+    val showStreaming = state.streaming?.let { live -> state.messages.none { it.id == live.messageId } } == true
+    val itemCount = state.messages.size + if (showStreaming) 1 else 0
 
     // Follow the conversation while the user is at the bottom; stop following
     // as soon as they scroll up to read, resume when they come back down.
@@ -170,7 +176,7 @@ fun ChatScreen(
                                         } else {
                                             null
                                         },
-                                    modifier = Modifier.animateItem(),
+                                    modifier = Modifier.messageAnimation(this),
                                 )
                             } else {
                                 AssistantMessage(
@@ -184,12 +190,14 @@ fun ChatScreen(
                                     onTap = toggle,
                                     onCopy = copy,
                                     onRegenerate = if (isLast && state.canSend) onRegenerate else null,
-                                    modifier = Modifier.animateItem(),
+                                    modifier = Modifier.messageAnimation(this),
                                 )
                             }
                         }
-                        state.streaming?.let { live ->
-                            item(key = STREAMING_KEY) {
+                        state.streaming?.takeIf { live -> state.messages.none { it.id == live.messageId } }?.let { live ->
+                            // Same key the saved message will use, so finishing a reply updates
+                            // this row in place instead of swapping one list item for another.
+                            item(key = live.messageId) {
                                 AssistantMessage(
                                     content = live.content,
                                     thinking = live.thinking,
@@ -200,7 +208,7 @@ fun ChatScreen(
                                     onTap = {},
                                     onCopy = {},
                                     onRegenerate = null,
-                                    modifier = Modifier.animateItem(),
+                                    modifier = Modifier.messageAnimation(this),
                                 )
                             }
                         }
@@ -378,7 +386,7 @@ private fun AssistantMessage(
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
         SunflowerMark(size = 24.dp, spinning = working, bloom = false, modifier = Modifier.padding(top = 1.dp))
         Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f).animateContentSize(Motion.snappy()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (!thinking.isNullOrBlank() || thinkingOpen) {
                 ThinkingBlock(thinking.orEmpty(), live = thinkingOpen)
             }
