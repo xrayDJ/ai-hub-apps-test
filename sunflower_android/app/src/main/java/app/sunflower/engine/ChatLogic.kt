@@ -8,41 +8,91 @@ data class ThinkSplit(
     val thinkingOpen: Boolean,
 )
 
-private const val OPEN = "<think>"
-private const val CLOSE = "</think>"
+/** How a model family marks its reasoning. */
+data class ReasoningFormat(
+    val open: String,
+    val close: String,
+    /** Wrapper tokens that can follow the close before the answer (removed from the answer). */
+    val answerPrefixes: List<String> = emptyList(),
+)
+
+val REASONING_FORMATS =
+    listOf(
+        // Qwen3, DeepSeek R1 and most open reasoning models.
+        ReasoningFormat("<think>", "</think>"),
+        // Gemma 4.
+        ReasoningFormat("<|channel>thought", "<channel|>"),
+        // Mistral Magistral.
+        ReasoningFormat("[THINK]", "[/THINK]"),
+        // gpt-oss (harmony): analysis channel, then the final channel.
+        ReasoningFormat(
+            "<|channel|>analysis<|message|>",
+            "<|end|>",
+            answerPrefixes = listOf("<|start|>assistant<|channel|>final<|message|>", "<|channel|>final<|message|>"),
+        ),
+    )
+
+private val STRAY_TOKENS = listOf("<|return|>", "<|end|>", "<end_of_turn>")
+
+/** The reasoning format whose opening marker a chat template left at the end of the prompt, if any. */
+fun reasoningOpenedByPrompt(prompt: String): ReasoningFormat? {
+    val tail = prompt.trimEnd()
+    return REASONING_FORMATS.firstOrNull { tail.endsWith(it.open) }
+}
 
 /**
- * Separates `<think>…</think>` reasoning from the answer. Works on partial
+ * Separates reasoning from the answer for any known format. Works on partial
  * text, so it can run on every streamed update.
  *
- * [startsInThinking] covers chat templates (Qwen3 and others) that put the
- * opening tag in the prompt, so the reply begins mid-reasoning with no tag.
+ * [openedByPrompt] covers chat templates that put the opening marker in the
+ * prompt, so the reply begins mid-reasoning with no marker of its own.
  */
 fun splitThinking(
     raw: String,
-    startsInThinking: Boolean,
+    openedByPrompt: ReasoningFormat? = null,
 ): ThinkSplit {
-    val text = if (startsInThinking) OPEN + raw else raw
-    val open = text.indexOf(OPEN)
-    if (open < 0) return ThinkSplit(null, trimPartialTag(text).trim(), thinkingOpen = false)
+    val text = if (openedByPrompt != null) openedByPrompt.open + raw else raw
+    val (format, open) =
+        REASONING_FORMATS
+            .map { it to text.indexOf(it.open) }
+            .filter { it.second >= 0 }
+            .minByOrNull { it.second }
+            ?: return ThinkSplit(null, clean(text), thinkingOpen = false)
 
     val before = text.substring(0, open)
-    val close = text.indexOf(CLOSE, open + OPEN.length)
+    val bodyStart = open + format.open.length
+    val close = text.indexOf(format.close, bodyStart)
     if (close < 0) {
-        val thinking = trimPartialTag(text.substring(open + OPEN.length)).trim()
-        return ThinkSplit(thinking, before.trim(), thinkingOpen = true)
+        return ThinkSplit(trimPartialMarker(text.substring(bodyStart)).trim(), clean(before), thinkingOpen = true)
     }
-    val thinking = text.substring(open + OPEN.length, close).trim()
-    val after = text.substring(close + CLOSE.length)
-    return ThinkSplit(thinking.ifEmpty { null }, trimPartialTag(before + after).trim(), thinkingOpen = false)
+    val thinking = text.substring(bodyStart, close).trim()
+    var after = text.substring(close + format.close.length)
+    format.answerPrefixes.forEach { prefix -> after = after.trimStart().removePrefix(prefix) }
+    return ThinkSplit(thinking.ifEmpty { null }, clean(before + after), thinkingOpen = false)
 }
 
-/** Hides a tag that is still arriving, e.g. a trailing "</thi" mid-stream. */
-private fun trimPartialTag(text: String): String {
-    val lt = text.lastIndexOf('<')
-    if (lt < 0) return text
-    val tail = text.substring(lt)
-    return if ((OPEN.startsWith(tail) || CLOSE.startsWith(tail)) && tail.length < CLOSE.length) text.substring(0, lt) else text
+/** Keeps the old call shape used by `<think>`-style templates. */
+fun splitThinking(
+    raw: String,
+    startsInThinking: Boolean,
+): ThinkSplit = splitThinking(raw, if (startsInThinking) REASONING_FORMATS.first() else null)
+
+private fun clean(text: String): String {
+    var result = trimPartialMarker(text)
+    STRAY_TOKENS.forEach { result = result.replace(it, "") }
+    return result.trim()
+}
+
+/** Hides a marker that is still arriving, e.g. a trailing "</thi" or "<|chan" mid-stream. */
+private fun trimPartialMarker(text: String): String {
+    val markers = REASONING_FORMATS.flatMap { listOf(it.open, it.close) + it.answerPrefixes } + STRAY_TOKENS
+    for (start in (text.length - 1) downTo maxOf(0, text.length - 40)) {
+        val c = text[start]
+        if (c != '<' && c != '[') continue
+        val tail = text.substring(start)
+        if (markers.any { it.length > tail.length && it.startsWith(tail) }) return text.substring(0, start)
+    }
+    return text
 }
 
 data class Turn(

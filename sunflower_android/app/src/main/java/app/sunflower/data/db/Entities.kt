@@ -49,6 +49,8 @@ data class MessageEntity(
     val draftAccepted: Long? = null,
     /** Unused; kept so databases already migrated to v6 still match the schema. */
     val speedupVsPlain: Double? = null,
+    /** How long the model reasoned before answering. */
+    val thinkingMs: Long? = null,
 )
 
 @Entity(tableName = "system_prompts")

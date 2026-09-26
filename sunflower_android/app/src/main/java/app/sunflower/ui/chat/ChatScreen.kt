@@ -1,6 +1,9 @@
 package app.sunflower.ui.chat
 
 import android.Manifest
+import kotlinx.coroutines.delay
+import androidx.compose.runtime.mutableLongStateOf
+import android.os.SystemClock
 import android.content.Context
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -212,6 +215,7 @@ fun ChatScreen(
                                     content = message.content,
                                     thinking = message.thinking,
                                     thinkingOpen = false,
+                                    thinkingMs = message.thinkingMs,
                                     working = false,
                                     stats = statsLine(message),
                                     // The latest reply keeps its actions in view; older ones show them on tap.
@@ -231,6 +235,8 @@ fun ChatScreen(
                                     content = live.content,
                                     thinking = live.thinking,
                                     thinkingOpen = live.thinkingOpen,
+                                    thinkingStartedAt = live.thinkingStartedAt,
+                                    thinkingMs = live.thinkingMs,
                                     working = true,
                                     stats = null,
                                     showActions = false,
@@ -406,6 +412,8 @@ private fun AssistantMessage(
     content: String,
     thinking: String?,
     thinkingOpen: Boolean,
+    thinkingStartedAt: Long? = null,
+    thinkingMs: Long? = null,
     working: Boolean,
     stats: String?,
     showActions: Boolean,
@@ -420,7 +428,7 @@ private fun AssistantMessage(
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (!thinking.isNullOrBlank() || thinkingOpen) {
-                ThinkingBlock(thinking.orEmpty(), live = thinkingOpen)
+                ThinkingBlock(thinking.orEmpty(), live = thinkingOpen, startedAt = thinkingStartedAt, durationMs = thinkingMs)
             }
             if (content.isNotEmpty()) {
                 SelectionContainer {
@@ -477,15 +485,36 @@ private fun ActionButton(
     )
 }
 
-/** Reasoning stays folded away unless the user opens it. */
+/**
+ * Reasoning stays folded away unless the user opens it. While it's being
+ * written, the header counts up and shows the latest line, faded, so it feels
+ * alive without taking over the chat.
+ */
 @Composable
 private fun ThinkingBlock(
     text: String,
     live: Boolean,
+    startedAt: Long?,
+    durationMs: Long?,
 ) {
     val colors = MaterialTheme.colorScheme
     var open by rememberSaveable { mutableStateOf(false) }
     val rotation by animateFloatAsState(if (open) 180f else 0f, Motion.snappy(), label = "chevron")
+    var now by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
+    if (live && startedAt != null) {
+        LaunchedEffect(startedAt) {
+            while (true) {
+                now = SystemClock.elapsedRealtime()
+                delay(250)
+            }
+        }
+    }
+    val header =
+        when {
+            live -> "Thinking…" + (startedAt?.let { " ${((now - it) / 1000).coerceAtLeast(0)} s" } ?: "")
+            durationMs != null -> "Thought for ${formatSeconds(durationMs)}"
+            else -> "Thought process"
+        }
     Column {
         Row(
             Modifier
@@ -494,13 +523,24 @@ private fun ThinkingBlock(
                 .padding(vertical = 4.dp, horizontal = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                if (live) "Thinking…" else "Thought process",
-                style = MaterialTheme.typography.labelMedium,
-                color = colors.onSurfaceVariant,
-            )
+            Text(header, style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
             Spacer(Modifier.width(4.dp))
             Icon(SunIcons.ChevronDown, null, tint = colors.onSurfaceVariant, modifier = Modifier.size(16.dp).rotate(rotation))
+        }
+        // Folded and still thinking: one faded line of the latest reasoning.
+        AnimatedVisibility(
+            visible = live && !open && text.isNotBlank(),
+            enter = fadeIn(Motion.enter()),
+            exit = fadeOut(Motion.exit()),
+        ) {
+            Text(
+                text.lineSequence().lastOrNull { it.isNotBlank() }.orEmpty().trim(),
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.onSurfaceVariant.copy(alpha = 0.55f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = 2.dp, top = 2.dp),
+            )
         }
         AnimatedVisibility(
             visible = open,
@@ -520,6 +560,9 @@ private fun ThinkingBlock(
         }
     }
 }
+
+private fun formatSeconds(ms: Long): String =
+    if (ms < 60_000) "${(ms / 1000).coerceAtLeast(1)} s" else "${ms / 60_000} min ${(ms % 60_000) / 1000} s"
 
 private fun statsLine(message: MessageEntity): String? {
     val speed = message.decodeTokensPerSec?.takeIf { it > 0 } ?: return null

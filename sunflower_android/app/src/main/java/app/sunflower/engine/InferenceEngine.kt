@@ -98,6 +98,10 @@ class InferenceEngine(
         val thinkingOpen: Boolean = false,
         /** False until the first token arrives (the model is reading the prompt). */
         val started: Boolean = false,
+        /** When reasoning began (SystemClock.elapsedRealtime), for a live "Thinking… 4 s". */
+        val thinkingStartedAt: Long? = null,
+        /** How long reasoning took, once it has closed. */
+        val thinkingMs: Long? = null,
     )
 
     data class GenerationFailure(val conversationId: String, val message: String)
@@ -422,26 +426,40 @@ class InferenceEngine(
             }
 
         val raw = StringBuilder()
-        var profile: ProfilingData? = null
+        var firstProfile: ProfilingData? = null
+        var lastProfile: ProfilingData? = null
+        var generated = 0L
         var error: String? = null
+        var thinkingStartedAt: Long? = null
+        var thinkingMs: Long? = null
         try {
             val prompt =
                 llm
                     .applyChatTemplate(messages.toTypedArray(), null, chat.thinking, true)
                     .getOrThrow()
                     .formattedText
-            val startsInThinking = prompt.trimEnd().endsWith("<think>")
+            val openedByPrompt = reasoningOpenedByPrompt(prompt)
             var lastEmit = 0L
-            fun publish() {
-                val split = splitThinking(raw.toString(), startsInThinking)
+
+            fun publish(): ThinkSplit {
+                val split = splitThinking(raw.toString(), openedByPrompt)
+                val now = SystemClock.elapsedRealtime()
+                if (split.thinkingOpen && thinkingStartedAt == null) thinkingStartedAt = now
+                if (!split.thinkingOpen && thinkingStartedAt != null && thinkingMs == null) thinkingMs = now - thinkingStartedAt!!
                 _generation.value =
-                    Generation(conversationId, messageId, split.content, split.thinking, split.thinkingOpen, started = raw.isNotEmpty())
+                    Generation(
+                        conversationId, messageId, split.content, split.thinking, split.thinkingOpen,
+                        started = raw.isNotEmpty(), thinkingStartedAt = thinkingStartedAt, thinkingMs = thinkingMs,
+                    )
+                return split
             }
+
             prefs.edit().putString(KEY_PENDING_GENERATE, "${ready.model.id}|${ready.backend.computeUnit}|${ready.applied.speculative}").commit()
             llm.generateStreamFlow(prompt, generationConfig(sampling, chat, keepTokens)).collect { result ->
                 when (result) {
                     is LlmStreamResult.Token -> {
                         raw.append(result.text)
+                        generated++
                         // Coalesce tokens to roughly one UI update per frame.
                         val now = SystemClock.uptimeMillis()
                         if (now - lastEmit >= FRAME_MS) {
@@ -449,15 +467,19 @@ class InferenceEngine(
                             publish()
                         }
                     }
-                    is LlmStreamResult.Completed -> profile = result.profile
+                    is LlmStreamResult.Completed -> {
+                        firstProfile = result.profile
+                        lastProfile = result.profile
+                    }
                     is LlmStreamResult.Error -> error = result.throwable.message ?: "Generation failed"
                     else -> Unit
                 }
             }
             publish()
 
-            val split = splitThinking(raw.toString(), startsInThinking)
+            val split = splitThinking(raw.toString(), openedByPrompt)
             if (split.content.isNotBlank() || !split.thinking.isNullOrBlank()) {
+                val profile = lastProfile
                 conversations.addAssistantMessage(
                     MessageEntity(
                         id = messageId,
@@ -466,12 +488,13 @@ class InferenceEngine(
                         content = split.content,
                         thinking = split.thinking,
                         createdAt = System.currentTimeMillis(),
-                        promptTokens = profile?.promptTokens,
-                        generatedTokens = profile?.generatedTokens,
-                        ttftMs = profile?.ttftMs,
+                        promptTokens = firstProfile?.promptTokens,
+                        generatedTokens = generated,
+                        ttftMs = firstProfile?.ttftMs,
                         decodeTokensPerSec = profile?.decodingSpeed,
                         draftTokens = profile?.draftNTotal?.takeIf { it > 0 },
                         draftAccepted = profile?.draftNAccepted?.takeIf { (profile?.draftNTotal ?: 0) > 0 },
+                        thinkingMs = thinkingMs ?: thinkingStartedAt?.let { SystemClock.elapsedRealtime() - it },
                     ),
                 )
                 conversations.setModelName(conversationId, ready.model.displayName)
