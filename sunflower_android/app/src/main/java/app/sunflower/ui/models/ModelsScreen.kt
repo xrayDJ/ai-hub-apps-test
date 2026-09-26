@@ -53,6 +53,8 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import app.sunflower.data.db.ModelEntity
 import app.sunflower.data.displayName
 import app.sunflower.data.failedSet
+import app.sunflower.data.isMtpHead
+import app.sunflower.data.isSpeculativeHead
 import app.sunflower.engine.Backend
 import app.sunflower.engine.CrashReport
 import app.sunflower.engine.speculativeLabel
@@ -238,9 +240,13 @@ private fun ModelCard(
         if (crashReport != null) CrashNotice(crashReport, onDismissCrash)
 
         when {
-            model.architecture == EAGLE3_ARCH ->
+            model.isSpeculativeHead ->
                 Text(
-                    "EAGLE3 head: not a chat model. Choose it under Speculative decoding in the settings of the model it was made for.",
+                    if (model.isMtpHead) {
+                        "MTP head: not a chat model. In the settings of the model it was made for, choose Speculative decoding → MTP and pick this file."
+                    } else {
+                        "EAGLE3 head: not a chat model. In the settings of the model it was made for, choose Speculative decoding → EAGLE3 head and pick this file."
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = colors.onSurfaceVariant,
                 )
@@ -429,7 +435,12 @@ private fun describe(
         model.quantization,
         model.sizeBytes.takeIf { it > 0 }?.let { Formatter.formatShortFileSize(context, it) },
         model.contextLength?.let { "${it / 1024}k ctx" },
-        "MTP".takeIf { (model.nextnLayers ?: 0) > 0 },
+        when {
+            model.isMtpHead -> "MTP head"
+            model.architecture == EAGLE3_ARCH -> "EAGLE3 head"
+            (model.nextnLayers ?: 0) > 0 -> "MTP"
+            else -> null
+        },
     ).joinToString("  ·  ")
 
 private fun backendSummary(

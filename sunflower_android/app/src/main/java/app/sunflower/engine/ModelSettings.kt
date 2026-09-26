@@ -129,7 +129,7 @@ fun LoadOptions.resolve(
         powerMode = if (backend == Backend.NPU) powerMode else "",
         chatTemplate = chatTemplate,
         speculative = speculative,
-        draftModelId = if (speculativeNeedsFile(speculative)) draftModelId else null,
+        draftModelId = if (speculativeUsesFile(speculative)) draftModelId else null,
         draftMax = draftMax,
         draftMin = draftMin,
         draftMinProbability = draftMinProbability,
@@ -186,10 +186,14 @@ fun powerModeLabel(mode: String): String =
 
 /**
  * Speculative decoding strategies in the bundled llama.cpp.
- * "draft" and "draft-eagle3" need a second file; "draft-mtp" needs a model with built-in MTP layers.
+ * "draft" and "draft-eagle3" need a second file; "draft-mtp" uses an MTP head file,
+ * or the model's own MTP layers when it has them.
  */
 val SPECULATIVE_TYPES =
     listOf("none", "draft-mtp", "draft", "draft-eagle3", "ngram-simple", "ngram-map-k", "ngram-map-k4v", "ngram-mod", "ngram-cache")
+
+/** Methods that can use a second file picked by the user. */
+fun speculativeUsesFile(type: String): Boolean = type == "draft" || type == "draft-eagle3" || type == "draft-mtp"
 
 fun speculativeNeedsFile(type: String): Boolean = type == "draft" || type == "draft-eagle3"
 
@@ -197,7 +201,7 @@ fun speculativeLabel(type: String): String =
     when (type) {
         "none" -> "Off"
         "draft" -> "Draft model"
-        "draft-mtp" -> "Built-in MTP (experimental)"
+        "draft-mtp" -> "MTP"
         "draft-eagle3" -> "EAGLE3 head"
         "ngram-simple" -> "N-gram"
         "ngram-map-k" -> "N-gram map"

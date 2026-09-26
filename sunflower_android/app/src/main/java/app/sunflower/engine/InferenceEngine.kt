@@ -9,6 +9,8 @@ import app.sunflower.data.ModelLibrary
 import app.sunflower.data.db.MessageEntity
 import app.sunflower.data.displayName
 import app.sunflower.data.failedSet
+import app.sunflower.data.isMtpHead
+import app.sunflower.data.isSpeculativeHead
 import app.sunflower.data.db.ModelEntity
 import com.geniex.sdk.LlmWrapper
 import com.geniex.sdk.bean.ChatMessage
@@ -219,9 +221,10 @@ class InferenceEngine(
             return
         }
 
-        if (model.architecture == EAGLE3_ARCH) {
+        if (model.isSpeculativeHead) {
+            val kind = if (model.isMtpHead) "an MTP head" else "an EAGLE3 head"
             _state.value =
-                State.Failed(model, "This is an EAGLE3 head, not a chat model. Pick it under Speculative decoding in its target model's settings.", false)
+                State.Failed(model, "This is $kind, not a chat model. Pick it under Speculative decoding in the settings of the model it was made for.", false)
             return
         }
 
@@ -237,8 +240,7 @@ class InferenceEngine(
         var lastError = "Couldn't load this model"
         val cores = Runtime.getRuntime().availableProcessors()
         for (backend in candidates) {
-            val resolved = settings.load.resolve(backend, model.contextLength, cores)
-            val draftPath = resolved.draftModelId?.let { openDraft(it) }
+            val (resolved, draftPath) = withSpeculativeFile(model, settings.load.resolve(backend, model.contextLength, cores))
             _state.value = State.Loading(model, backend)
             prefs.edit().putString(KEY_PENDING_LOAD, "${model.id}|${backend.computeUnit}|${resolved.speculative}").commit()
             val result =
@@ -261,7 +263,7 @@ class InferenceEngine(
                 wrapper = loaded
                 handle = opened
                 library.recordLoaded(model.id, backend.computeUnit)
-                _state.value = State.Ready(library.get(model.id) ?: model, backend, resolved.copy(draftModelId = resolved.draftModelId.takeIf { draftPath != null }))
+                _state.value = State.Ready(library.get(model.id) ?: model, backend, resolved)
                 return
             }
             closeDraft()
@@ -280,7 +282,36 @@ class InferenceEngine(
             )
     }
 
-    /** Opens the speculative-decoding draft model; a missing one just disables drafting. */
+    /**
+     * Settles which speculative method actually runs and opens its file:
+     * an MTP head picked under "Draft model" is run as MTP (it only works linked
+     * to this model), and a method whose file is missing falls back to plain decoding.
+     */
+    private suspend fun withSpeculativeFile(
+        model: ModelEntity,
+        resolved: ResolvedLoad,
+    ): Pair<ResolvedLoad, String?> {
+        val helper = resolved.draftModelId?.let { library.get(it) }
+        var method = resolved.speculative
+        if (method == "draft" && helper?.isMtpHead == true) {
+            method = "draft-mtp"
+            // Save the correction so the settings screen shows what actually runs.
+            val saved = library.settingsOf(library.get(model.id) ?: model)
+            library.updateSettings(model.id, saved.copy(load = saved.load.copy(speculative = method)))
+        }
+        val path = if (helper != null && speculativeUsesFile(method)) openDraft(helper.id) else null.also { closeDraft() }
+        val builtInMtp = (model.nextnLayers ?: 0) > 0
+        val runnable =
+            when (method) {
+                "draft", "draft-eagle3" -> path != null
+                "draft-mtp" -> path != null || builtInMtp
+                else -> true
+            }
+        val effective = if (runnable) method else "none"
+        return resolved.copy(speculative = effective, draftModelId = helper?.id.takeIf { path != null }) to path
+    }
+
+    /** Opens the speculative-decoding helper file; a missing one just disables drafting. */
     private suspend fun openDraft(id: String): String? {
         closeDraft()
         val draft = library.get(id) ?: return null
@@ -305,8 +336,8 @@ class InferenceEngine(
             nUBatch = microBatch,
             nGpuLayers = gpuLayers,
             chat_template_content = chatTemplate,
-            // A method that needs a helper file, without one, would fail the whole load; use plain decoding instead.
-            spec_type = if (speculative == "none" || (speculativeNeedsFile(speculative) && draftPath == null)) "" else speculative,
+            // Already settled by withSpeculativeFile: "none" means plain decoding.
+            spec_type = if (speculative == "none") "" else speculative,
             spec_draft_model = draftPath.orEmpty(),
             spec_n_max = draftMax,
             spec_n_min = draftMin,

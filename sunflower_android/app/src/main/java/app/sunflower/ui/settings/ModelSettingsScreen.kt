@@ -56,7 +56,9 @@ import app.sunflower.engine.estimateTokens
 import app.sunflower.engine.powerModeLabel
 import app.sunflower.engine.sameSamplerAs
 import app.sunflower.engine.speculativeLabel
-import app.sunflower.engine.speculativeNeedsFile
+import app.sunflower.engine.speculativeUsesFile
+import app.sunflower.data.isMtpHead
+import app.sunflower.data.isSpeculativeHead
 import app.sunflower.engine.withSamplerFrom
 import app.sunflower.ui.components.ScreenHeader
 import app.sunflower.ui.components.SunButton
@@ -497,21 +499,19 @@ private fun LoadingTab(
     SettingSection("Speculative decoding") {
         val mtpLayers = model.nextnLayers ?: state.info?.nextnLayers ?: 0
         val hasMtp = mtpLayers > 0
-        // Built-in MTP only makes sense for models that carry MTP layers; keep it listed if it was chosen anyway.
-        val methods = SPECULATIVE_TYPES.filter { it != "draft-mtp" || hasMtp || l.speculative == it }
         ChoiceSetting(
             "Method",
             "Guesses several tokens ahead and lets the model check them all in one step. When guesses are right, replies come faster; the text is the same either way. " +
-                "Built-in MTP uses prediction layers some models carry inside their own file, so nothing extra is loaded. " +
-                "Draft model uses a smaller model you've imported that shares this model's tokenizer (for example Qwen3 0.6B with Qwen3 8B). " +
-                "EAGLE3 head uses a tiny add-on file trained for this exact model, which reads the model's internal state to guess well. " +
+                "MTP uses a multi-token-prediction head made for this model: either a separate head file (like Gemma 4's “assistant”) or layers built into the model itself. " +
+                "Draft model uses a smaller complete model that shares this model's tokenizer (for example Qwen3 0.6B with Qwen3 8B). " +
+                "EAGLE3 head uses a tiny add-on file trained for this exact model. " +
                 "The n-gram methods need no extra file: they reuse patterns from the conversation and help most when replies repeat earlier text, like editing code. " +
                 "Each reply shows how many guesses were accepted, so you can tell whether it helps.",
-            options = methods,
+            options = SPECULATIVE_TYPES,
             selected = l.speculative,
             default = d.speculative,
             label = ::speculativeLabel,
-            onChange = { v -> set { copy(speculative = v, draftModelId = draftModelId.takeIf { speculativeNeedsFile(v) }) } },
+            onChange = { v -> set { copy(speculative = v, draftModelId = draftModelId.takeIf { speculativeUsesFile(v) }) } },
             footer = {
                 if (hasMtp && l.speculative == "none") {
                     Text(
@@ -523,35 +523,45 @@ private fun LoadingTab(
                 }
             },
         )
-        AnimatedVisibility(speculativeNeedsFile(l.speculative)) {
-            val eagle = l.speculative == "draft-eagle3"
-            // EAGLE3 heads first for EAGLE3; heads are never offered as ordinary draft models.
+        AnimatedVisibility(speculativeUsesFile(l.speculative)) {
+            val kind = l.speculative
             val candidates =
-                if (eagle) {
-                    state.otherModels.sortedByDescending { it.architecture == EAGLE3_ARCH }
-                } else {
-                    state.otherModels.filter { it.architecture != EAGLE3_ARCH }
+                when (kind) {
+                    "draft-mtp" -> state.otherModels.filter { it.isMtpHead }
+                    "draft-eagle3" -> state.otherModels.sortedByDescending { it.architecture == EAGLE3_ARCH }
+                    else -> state.otherModels.filter { !it.isSpeculativeHead }
                 }
+            // For MTP, "none picked" means the model's own layers, which only exist on some models.
+            val noneLabel = if (kind == "draft-mtp") "Built into this model" else "None"
+            val showNone = kind != "draft-mtp" || hasMtp
             Column {
-                if (candidates.isEmpty()) {
+                if (candidates.isEmpty() && (kind != "draft-mtp" || !hasMtp)) {
                     Text(
-                        if (eagle) "Import the EAGLE3 head made for this model first." else "Import a smaller model from the same family first.",
+                        when (kind) {
+                            "draft-mtp" -> "This model has no MTP layers of its own. Import the MTP head made for it (for Gemma 4, its “assistant” GGUF)."
+                            "draft-eagle3" -> "Import the EAGLE3 head made for this model first."
+                            else -> "Import a smaller model from the same family first."
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier.padding(bottom = 8.dp),
                     )
                 } else {
                     ChoiceSetting(
-                        if (eagle) "EAGLE3 head" else "Draft model",
-                        if (eagle) {
-                            "The EAGLE3 file trained for this exact model. A head made for a different model, even a fine-tune of the same one, won't help."
-                        } else {
-                            "The small model that makes the guesses. It is loaded alongside this one and uses extra memory."
+                        when (kind) {
+                            "draft-mtp" -> "MTP head"
+                            "draft-eagle3" -> "EAGLE3 head"
+                            else -> "Draft model"
                         },
-                        options = listOf<String?>(null) + candidates.map { it.id },
+                        when (kind) {
+                            "draft-mtp" -> "The head that makes the guesses. It must be made for this exact model; it runs linked to it and adds a little memory."
+                            "draft-eagle3" -> "The EAGLE3 file trained for this exact model. A head made for a different model, even a fine-tune of the same one, won't help."
+                            else -> "The small model that makes the guesses. It is loaded alongside this one and uses extra memory. Heads are listed under their own methods."
+                        },
+                        options = (if (showNone) listOf<String?>(null) else emptyList()) + candidates.map { it.id },
                         selected = l.draftModelId,
                         default = null,
-                        label = { id -> id?.let { candidates.firstOrNull { m -> m.id == it }?.displayName } ?: "None" },
+                        label = { id -> id?.let { candidates.firstOrNull { m -> m.id == it }?.displayName } ?: noneLabel },
                         onChange = { v -> set { copy(draftModelId = v) } },
                     )
                 }

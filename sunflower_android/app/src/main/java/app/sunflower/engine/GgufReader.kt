@@ -46,6 +46,9 @@ data class GgufInfo(
 
 const val EAGLE3_ARCH = "eagle3"
 
+/** Architectures that are MTP drafters for another model, never chat models themselves. */
+val MTP_HEAD_ARCHS = setOf("gemma4-assistant")
+
 class NotGgufException : Exception("This file isn't a GGUF model")
 
 /**

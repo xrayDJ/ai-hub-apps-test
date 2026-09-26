@@ -237,5 +237,19 @@ class ModelLibrary(
 
 fun ModelEntity.failedSet(): Set<String> = failedBackends.split(',').filter { it.isNotBlank() }.toSet()
 
+/**
+ * An MTP head: a drafter that only works linked to its target model's context.
+ * Gemma 4's "assistant" has its own architecture; other families ship heads as
+ * files carrying only MTP layers, which are usually named as such.
+ */
+val ModelEntity.isMtpHead: Boolean
+    get() =
+        architecture in app.sunflower.engine.MTP_HEAD_ARCHS ||
+            ((nextnLayers ?: 0) > 0 && fileName.contains("mtp", ignoreCase = true))
+
+/** Heads help another model guess ahead; they can't hold a conversation. */
+val ModelEntity.isSpeculativeHead: Boolean
+    get() = isMtpHead || architecture == app.sunflower.engine.EAGLE3_ARCH
+
 val ModelEntity.displayName: String
     get() = name ?: fileName.removeSuffix(".gguf")
