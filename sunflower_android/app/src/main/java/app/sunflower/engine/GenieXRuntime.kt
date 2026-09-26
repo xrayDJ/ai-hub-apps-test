@@ -41,8 +41,16 @@ class GenieXRuntime(
                         }
 
                         override fun onFailure(reason: String) {
-                            Log.e(TAG, "GenieX init failed: $reason")
-                            _state.value = State.Failed(reason)
+                            // Sunflower ships only the llama.cpp plugin: the QAIRT runtime (for
+                            // AI Hub's precompiled models) is left out of the APK to save ~180 MB,
+                            // and the SDK reports that as a failure. Only llama.cpp problems count.
+                            val problems = reason.lines().filter { it.isNotBlank() && !it.contains("qairt", ignoreCase = true) }
+                            if (problems.isEmpty()) {
+                                _state.value = State.Ready
+                            } else {
+                                Log.e(TAG, "GenieX init failed: $reason")
+                                _state.value = State.Failed(problems.joinToString("\n"))
+                            }
                         }
                     },
                 )

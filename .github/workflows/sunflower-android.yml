@@ -18,6 +18,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-24.04
+    env:
+      HAS_UPLOAD_KEY: ${{ secrets.SUNFLOWER_UPLOAD_KEYSTORE_BASE64 != '' }}
     defaults:
       run:
         working-directory: sunflower_android
@@ -36,11 +38,41 @@ jobs:
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;35.0.0"
 
-      - name: Build debug APK
-        run: ./gradlew assembleDebug --stacktrace
+      - name: Unit tests
+        run: ./gradlew testDebugUnitTest --stacktrace
+
+      - name: Lint
+        run: ./gradlew lintDebug
+
+      # Only when the owner has added an upload key as repository secrets.
+      - name: Decode upload key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.SUNFLOWER_UPLOAD_KEYSTORE_BASE64 }}
+        if: ${{ env.HAS_UPLOAD_KEY == 'true' }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          echo "SUNFLOWER_UPLOAD_KEYSTORE_FILE=$RUNNER_TEMP/upload.jks" >> "$GITHUB_ENV"
+
+      - name: Build release APK
+        env:
+          SUNFLOWER_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.SUNFLOWER_UPLOAD_KEYSTORE_PASSWORD }}
+          SUNFLOWER_UPLOAD_KEY_ALIAS: ${{ secrets.SUNFLOWER_UPLOAD_KEY_ALIAS }}
+          SUNFLOWER_UPLOAD_KEY_PASSWORD: ${{ secrets.SUNFLOWER_UPLOAD_KEY_PASSWORD }}
+        run: |
+          ./gradlew assembleRelease --stacktrace
+          if [ -n "$SUNFLOWER_UPLOAD_KEYSTORE_FILE" ]; then ./gradlew bundleRelease --stacktrace; fi
+          apk=app/build/outputs/apk/release/app-release.apk
+          echo "### Sunflower release APK: $(du -h "$apk" | cut -f1)" >> "$GITHUB_STEP_SUMMARY"
+          unzip -l "$apk" | awk '/lib\/arm64-v8a/{printf "%.1f MB  %s\n", $1/1048576, $4}' | sort -rn >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: sunflower-debug-apk
-          path: sunflower_android/app/build/outputs/apk/debug/app-debug.apk
+          name: sunflower-apk
+          path: sunflower_android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ env.HAS_UPLOAD_KEY == 'true' }}
+        with:
+          name: sunflower-play-bundle
+          path: sunflower_android/app/build/outputs/bundle/release/app-release.aab

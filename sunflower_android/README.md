@@ -16,12 +16,21 @@ on-device, built on the [GenieX SDK](https://github.com/qualcomm/geniex)
 Requires JDK 17 and the Android SDK (platform 36).
 
 ```bash
-./gradlew assembleDebug
-adb install -t app/build/outputs/apk/debug/app-debug.apk
+./gradlew testDebugUnitTest lintDebug assembleRelease
+adb install app/build/outputs/apk/release/app-release.apk
 ```
 
-CI builds the debug APK on every push that touches this folder; see
-`.github/workflows/sunflower-android.yml`.
+CI runs the unit tests and lint, then builds the minified release APK on every
+push that touches this folder (`.github/workflows/sunflower-android.yml`).
+Builds are signed with a committed development key so updates install over each
+other; see `signing/README.md` for adding a private upload key for store releases.
+
+### Size
+
+The GenieX SDK ships ~208 MB of native code, ~180 MB of which is Qualcomm's
+QNN/QAIRT runtime for AI Hub's precompiled models. Sunflower only runs GGUF
+through llama.cpp (whose NPU path is `ggml-hexagon`), so those libraries are
+excluded in `app/build.gradle.kts`. Fonts are subset to Latin.
 
 ## Layout
 
