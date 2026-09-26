@@ -54,7 +54,8 @@ import app.sunflower.data.db.ModelEntity
 import app.sunflower.data.displayName
 import app.sunflower.data.failedSet
 import app.sunflower.engine.Backend
-import app.sunflower.engine.BackendChoice
+import app.sunflower.engine.LoadOptions
+import app.sunflower.engine.ModelSettings
 import app.sunflower.engine.InferenceEngine
 import app.sunflower.ui.components.InfoHintButton
 import app.sunflower.ui.components.InfoHintText
@@ -73,7 +74,9 @@ fun ModelsScreen(
     state: ModelsState,
     onBack: () -> Unit,
     onImport: (Uri) -> Unit,
-    onLoad: (ModelEntity, BackendChoice) -> Unit,
+    onLoad: (ModelEntity) -> Unit,
+    onSetBackend: (ModelEntity, String) -> Unit,
+    onOpenSettings: (ModelEntity) -> Unit,
     onUnload: () -> Unit,
     onRemove: (ModelEntity) -> Unit,
     onCopyIntoApp: (ModelEntity) -> Unit,
@@ -122,7 +125,9 @@ fun ModelsScreen(
                         copyProgress = state.copying[model.id],
                         expanded = expandedId == model.id,
                         onToggle = { expandedId = if (expandedId == model.id) null else model.id },
-                        onLoad = { onLoad(model, it) },
+                        onLoad = { onLoad(model) },
+                        onSetBackend = { onSetBackend(model, it) },
+                        onOpenSettings = { onOpenSettings(model) },
                         onUnload = onUnload,
                         onRemove = { onRemove(model) },
                         onCopyIntoApp = { onCopyIntoApp(model) },
@@ -172,7 +177,9 @@ private fun ModelCard(
     copyProgress: Float?,
     expanded: Boolean,
     onToggle: () -> Unit,
-    onLoad: (BackendChoice) -> Unit,
+    onLoad: () -> Unit,
+    onSetBackend: (String) -> Unit,
+    onOpenSettings: () -> Unit,
     onUnload: () -> Unit,
     onRemove: () -> Unit,
     onCopyIntoApp: () -> Unit,
@@ -185,7 +192,7 @@ private fun ModelCard(
     val loaded = mine && engine is InferenceEngine.State.Ready
     val busy = engine is InferenceEngine.State.Loading
     val border by animateColorAsState(if (loaded) colors.primary else colors.outlineVariant, Motion.enter(), label = "cardBorder")
-    var choice by remember(model.id) { mutableStateOf<BackendChoice>(BackendChoice.Auto) }
+    val backend = ModelSettings.fromJson(model.settings).load.backend
     val source = remember { MutableInteractionSource() }
 
     Column(
@@ -226,7 +233,7 @@ private fun ModelCard(
                 }
             mine && engine is InferenceEngine.State.Failed -> {
                 Text(engine.message, style = MaterialTheme.typography.bodySmall, color = colors.error, maxLines = 4, overflow = TextOverflow.Ellipsis)
-                SunButton("Try again", { onLoad(choice) }, style = SunButtonStyle.Tonal, enabled = !busy)
+                SunButton("Try again", onLoad, style = SunButtonStyle.Tonal, enabled = !busy)
                 if (engine.canCopyIntoApp) {
                     Column {
                         if (engine.canGrantFileAccess) SunButton("Allow file access", onAllowFileAccess, style = SunButtonStyle.Ghost)
@@ -238,12 +245,12 @@ private fun ModelCard(
             else ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        backendSummary(choice, model),
+                        backendSummary(backend, model),
                         style = MaterialTheme.typography.labelMedium,
                         color = colors.onSurfaceVariant,
                         modifier = Modifier.weight(1f),
                     )
-                    SunButton("Load", { onLoad(choice) }, enabled = !busy)
+                    SunButton("Load", onLoad, enabled = !busy)
                 }
         }
 
@@ -254,9 +261,9 @@ private fun ModelCard(
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 4.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SunChip("Auto", choice == BackendChoice.Auto, { choice = BackendChoice.Auto })
-                    Backend.entries.forEach { backend ->
-                        SunChip(backend.label, choice == BackendChoice.Only(backend), { choice = BackendChoice.Only(backend) })
+                    SunChip("Auto", backend == LoadOptions.AUTO, { onSetBackend(LoadOptions.AUTO) })
+                    Backend.entries.forEach { b ->
+                        SunChip(b.label, backend == b.computeUnit, { onSetBackend(b.computeUnit) })
                     }
                 }
                 val crashed = model.failedSet().mapNotNull { Backend.fromUnit(it)?.label }
@@ -270,7 +277,10 @@ private fun ModelCard(
                 if (model.localPath != null) {
                     Text("Stored inside Sunflower", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
                 }
-                SunButton("Remove", onRemove, style = SunButtonStyle.Ghost, enabled = !(mine && busy))
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    SunButton("Settings", onOpenSettings, icon = SunIcons.Tune, style = SunButtonStyle.Tonal)
+                    SunButton("Remove", onRemove, style = SunButtonStyle.Ghost, enabled = !(mine && busy))
+                }
             }
         }
     }
@@ -345,10 +355,9 @@ private fun describe(
     ).joinToString("  ·  ")
 
 private fun backendSummary(
-    choice: BackendChoice,
+    backend: String,
     model: ModelEntity,
 ): String =
-    when (choice) {
-        BackendChoice.Auto -> Backend.fromUnit(model.lastBackend)?.let { "Auto · last on ${it.label}" } ?: "Auto"
-        is BackendChoice.Only -> choice.backend.label
-    }
+    Backend.fromUnit(backend)?.label
+        ?: Backend.fromUnit(model.lastBackend)?.let { "Auto · last on ${it.label}" }
+        ?: "Auto"

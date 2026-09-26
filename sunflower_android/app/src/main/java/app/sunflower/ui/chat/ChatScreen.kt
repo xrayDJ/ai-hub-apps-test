@@ -96,6 +96,7 @@ fun ChatScreen(
     onSystemPromptChange: (String) -> Unit,
     onBack: () -> Unit,
     onOpenModels: () -> Unit,
+    onOpenSettings: (modelId: String) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
     val haptics = rememberHaptics()
@@ -138,7 +139,14 @@ fun ChatScreen(
                 title = state.title,
                 onBack = onBack,
                 subtitle = { ModelSubtitle(state.model, onOpenModels) },
-                actions = { SunIconButton(SunIcons.Script, "System prompt", { editingPrompt = true }) },
+                actions = {
+                    SunIconButton(
+                        SunIcons.Tune,
+                        "Model settings",
+                        { (state.model as? ModelStatus.Ready)?.let { onOpenSettings(it.id) } ?: onOpenModels() },
+                    )
+                    SunIconButton(SunIcons.Script, "System prompt", { editingPrompt = true })
+                },
             )
 
             Box(Modifier.weight(1f).fillMaxWidth()) {

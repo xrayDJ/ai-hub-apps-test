@@ -5,6 +5,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -19,6 +20,8 @@ import app.sunflower.ui.home.HomeScreen
 import app.sunflower.ui.home.HomeViewModel
 import app.sunflower.ui.models.ModelsScreen
 import app.sunflower.ui.models.ModelsViewModel
+import app.sunflower.ui.settings.ModelSettingsScreen
+import app.sunflower.ui.settings.ModelSettingsViewModel
 import app.sunflower.ui.theme.Motion
 import kotlinx.serialization.Serializable
 
@@ -27,6 +30,10 @@ object HomeRoute
 
 @Serializable
 object ModelsRoute
+
+/** Settings for one model; [conversationId] lets the screen show that chat's system prompt budget. */
+@Serializable
+data class ModelSettingsRoute(val modelId: String, val conversationId: String? = null)
 
 /** A null id opens a fresh chat that is saved on its first message. */
 @Serializable
@@ -68,6 +75,8 @@ fun SunflowerNavHost() {
                 onRemove = vm::remove,
                 onCopyIntoApp = vm::copyIntoApp,
                 onRequestFileAccess = vm::requestedFileAccess,
+                onSetBackend = vm::setBackend,
+                onOpenSettings = { nav.navigate(ModelSettingsRoute(it.id)) },
                 onResume = vm::onResume,
             )
         }
@@ -85,6 +94,24 @@ fun SunflowerNavHost() {
                 onSystemPromptChange = vm::setSystemPrompt,
                 onBack = { nav.popBackStack() },
                 onOpenModels = { nav.navigate(ModelsRoute) },
+                onOpenSettings = { modelId -> nav.navigate(ModelSettingsRoute(modelId, vm.savedConversationId)) },
+            )
+        }
+        composable<ModelSettingsRoute> { entry ->
+            val route = entry.toRoute<ModelSettingsRoute>()
+            val context = LocalContext.current
+            val vm = viewModel { ModelSettingsViewModel(route.modelId, container.models, container.engine, context) }
+            val state by vm.state.collectAsStateWithLifecycle()
+            val systemPrompt by produceState<String?>(null, route.conversationId) {
+                value = route.conversationId?.let { container.conversations.conversation(it)?.systemPrompt }
+            }
+            ModelSettingsScreen(
+                state = state,
+                systemPrompt = systemPrompt,
+                onUpdate = vm::update,
+                onReload = vm::reload,
+                onRefreshMemory = vm::refreshMemory,
+                onBack = { nav.popBackStack() },
             )
         }
     }

@@ -9,7 +9,9 @@ import android.provider.OpenableColumns
 import android.system.Os
 import app.sunflower.data.db.ModelEntity
 import app.sunflower.data.db.SunflowerDatabase
+import app.sunflower.engine.GgufInfo
 import app.sunflower.engine.GgufReader
+import app.sunflower.engine.ModelSettings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
@@ -159,6 +161,30 @@ class ModelLibrary(
             model.localPath?.let { File(it).delete() }
             releasePermission(Uri.parse(model.uri))
             dao.delete(id)
+        }
+
+    fun settingsOf(model: ModelEntity): ModelSettings = ModelSettings.fromJson(model.settings)
+
+    suspend fun updateSettings(
+        id: String,
+        settings: ModelSettings,
+    ) {
+        val dao = database().models()
+        val model = dao.get(id) ?: return
+        dao.upsert(model.copy(settings = settings.toJson()))
+    }
+
+    private val infoCache = java.util.concurrent.ConcurrentHashMap<String, GgufInfo>()
+
+    /** Re-reads the header for details not kept in the database (attention shape, recommended sampling). */
+    suspend fun info(model: ModelEntity): GgufInfo? =
+        infoCache[model.id] ?: withContext(Dispatchers.IO) {
+            runCatching {
+                val stream =
+                    model.localPath?.takeIf { File(it).canRead() }?.let { File(it).inputStream() }
+                        ?: resolver.openInputStream(Uri.parse(model.uri))
+                stream?.use { GgufReader.read(it) }
+            }.getOrNull()?.also { infoCache[model.id] = it }
         }
 
     suspend fun recordLoaded(

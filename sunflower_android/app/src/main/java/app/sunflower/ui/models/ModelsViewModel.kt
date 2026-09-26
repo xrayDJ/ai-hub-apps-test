@@ -75,13 +75,21 @@ class ModelsViewModel(
         val id = awaitingAccessFor ?: return
         if (!library.hasAllFilesAccess()) return
         awaitingAccessFor = null
-        viewModelScope.launch { library.get(id)?.let { engine.load(it, BackendChoice.Auto) } }
+        viewModelScope.launch { library.get(id)?.let { engine.load(it) } }
     }
 
-    fun load(
+    fun load(model: ModelEntity) = engine.load(model)
+
+    /** The backend picked on the card is the model's saved setting, shared with the settings screen. */
+    fun setBackend(
         model: ModelEntity,
-        choice: BackendChoice,
-    ) = engine.load(model, choice)
+        backend: String,
+    ) {
+        viewModelScope.launch {
+            val settings = library.settingsOf(model)
+            library.updateSettings(model.id, settings.copy(load = settings.load.copy(backend = backend)))
+        }
+    }
 
     fun unload() = engine.unload()
 
@@ -106,7 +114,7 @@ class ModelsViewModel(
                         copying.update { it + (model.id to fraction) }
                     }
                 }
-                library.get(model.id)?.let { engine.load(it, BackendChoice.Auto) }
+                library.get(model.id)?.let { engine.load(it) }
             } catch (e: Exception) {
                 importError.value = "Copy failed: ${e.message ?: e.javaClass.simpleName}"
             } finally {

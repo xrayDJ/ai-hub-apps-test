@@ -17,7 +17,27 @@ data class GgufInfo(
     /** Transformer layers; the ceiling for GPU offload. */
     val layerCount: Int?,
     val hasChatTemplate: Boolean,
-)
+    val embeddingLength: Int? = null,
+    val headCount: Int? = null,
+    val headCountKv: Int? = null,
+    val keyLength: Int? = null,
+    val valueLength: Int? = null,
+    /** Sampler values the model's authors recommend (general.sampling.*), if declared. */
+    val recommendedSampling: Sampling? = null,
+) {
+    /**
+     * Rough KV-cache size for [contextSize] tokens at 16-bit precision. Models
+     * with sliding-window or state-space layers use less, so this is an upper bound.
+     */
+    fun kvCacheBytes(contextSize: Int): Long? {
+        val layers = layerCount ?: return null
+        val heads = headCount ?: return null
+        val kvHeads = headCountKv ?: heads
+        val headDim = (embeddingLength ?: return null) / heads
+        val perToken = kvHeads.toLong() * ((keyLength ?: headDim) + (valueLength ?: headDim)) * 2L
+        return perToken * layers * contextSize
+    }
+}
 
 class NotGgufException : Exception("This file isn't a GGUF model")
 
@@ -39,6 +59,7 @@ object GgufReader {
 
         val strings = HashMap<String, String>()
         val ints = HashMap<String, Long>()
+        val floats = HashMap<String, Double>()
         var hasTemplate = false
         for (i in 0 until kvCount) {
             val key = s.string()
@@ -53,6 +74,8 @@ object GgufReader {
                     }
                 }
                 TYPE_ARRAY -> s.skipArray()
+                TYPE_FLOAT32 -> floats[key] = s.float32().toDouble()
+                TYPE_FLOAT64 -> floats[key] = Double.fromBits(s.u64())
                 else -> s.scalar(type)?.let { ints[key] = it }
             }
         }
@@ -66,6 +89,33 @@ object GgufReader {
             contextLength = arch?.let { ints["$it.context_length"]?.toInt() },
             layerCount = arch?.let { ints["$it.block_count"]?.toInt() },
             hasChatTemplate = hasTemplate,
+            embeddingLength = arch?.let { ints["$it.embedding_length"]?.toInt() },
+            headCount = arch?.let { ints["$it.attention.head_count"]?.toInt() },
+            headCountKv = arch?.let { ints["$it.attention.head_count_kv"]?.toInt() },
+            keyLength = arch?.let { ints["$it.attention.key_length"]?.toInt() },
+            valueLength = arch?.let { ints["$it.attention.value_length"]?.toInt() },
+            recommendedSampling = recommendedSampling(ints, floats),
+        )
+    }
+
+    private fun recommendedSampling(
+        ints: Map<String, Long>,
+        floats: Map<String, Double>,
+    ): Sampling? {
+        fun f(key: String) = floats["general.sampling.$key"]?.toFloat() ?: ints["general.sampling.$key"]?.toFloat()
+        val temp = f("temp")
+        val topP = f("top_p")
+        val topK = ints["general.sampling.top_k"]?.toInt()
+        val minP = f("min_p")
+        val repeat = f("penalty_repeat")
+        if (listOf(temp, topP, topK, minP, repeat).all { it == null }) return null
+        val base = Sampling()
+        return base.copy(
+            temperature = temp ?: base.temperature,
+            topP = topP ?: base.topP,
+            topK = topK ?: base.topK,
+            minP = minP ?: base.minP,
+            repetitionPenalty = repeat ?: base.repetitionPenalty,
         )
     }
 
@@ -184,6 +234,8 @@ object GgufReader {
         }
 
         fun skipString() = skip(u64())
+
+        fun float32(): Float = java.lang.Float.intBitsToFloat(u32().toInt())
 
         fun skipArray() {
             val elementType = u32().toInt()

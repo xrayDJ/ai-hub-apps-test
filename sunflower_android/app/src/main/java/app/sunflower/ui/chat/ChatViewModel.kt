@@ -29,7 +29,7 @@ sealed interface ModelStatus {
 
     data class Loading(val name: String) : ModelStatus
 
-    data class Ready(val name: String, val backend: String) : ModelStatus
+    data class Ready(val id: String, val name: String, val backend: String) : ModelStatus
 }
 
 data class ChatState(
@@ -84,7 +84,7 @@ class ChatViewModel(
         combine(engine.state, engine.generation, engine.failure, conversationId, lingering) { engineState, generation, failure, id, linger ->
             val model =
                 when (engineState) {
-                    is InferenceEngine.State.Ready -> ModelStatus.Ready(engineState.model.displayName, engineState.backend.label)
+                    is InferenceEngine.State.Ready -> ModelStatus.Ready(engineState.model.id, engineState.model.displayName, engineState.backend.label)
                     is InferenceEngine.State.Loading -> ModelStatus.Loading(engineState.model.displayName)
                     else -> ModelStatus.None
                 }
@@ -169,6 +169,9 @@ class ChatViewModel(
             startReply(id)
         }
     }
+
+    /** Conversation id once the chat has been saved, for screens that need its context. */
+    val savedConversationId: String? get() = conversationId.value
 
     fun stop() {
         viewModelScope.launch { engine.stop() }

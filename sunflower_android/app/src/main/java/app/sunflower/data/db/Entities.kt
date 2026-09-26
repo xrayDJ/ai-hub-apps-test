@@ -76,4 +76,6 @@ data class ModelEntity(
     val lastBackend: String?,
     /** Comma-separated backends that failed or crashed while loading this model. */
     val failedBackends: String,
+    /** [app.sunflower.engine.ModelSettings] as JSON; null means all defaults. */
+    val settings: String? = null,
 )

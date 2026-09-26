@@ -68,7 +68,14 @@ class InferenceEngine(
 
         data class Loading(val model: ModelEntity, val backend: Backend) : State
 
-        data class Ready(val model: ModelEntity, val backend: Backend, val contextSize: Int) : State
+        data class Ready(
+            val model: ModelEntity,
+            val backend: Backend,
+            /** Exactly what the runtime was given, for showing which settings changed since. */
+            val applied: ResolvedLoad,
+        ) : State {
+            val contextSize: Int get() = applied.contextSize
+        }
 
         data class Failed(
             val model: ModelEntity,
@@ -108,6 +115,7 @@ class InferenceEngine(
     private val mutex = Mutex()
     private var wrapper: LlmWrapper? = null
     private var handle: ModelHandle? = null
+    private var draftHandle: ModelHandle? = null
     private var loadJob: Job? = null
     private var generateJob: Job? = null
 
@@ -121,9 +129,10 @@ class InferenceEngine(
         }
     }
 
+    /** Loads [model] with its saved settings. [choice] overrides the saved backend for this load only. */
     fun load(
         model: ModelEntity,
-        choice: BackendChoice,
+        choice: BackendChoice? = null,
     ) {
         if (_state.value is State.Loading || generateJob?.isActive == true) return
         loadJob =
@@ -146,9 +155,14 @@ class InferenceEngine(
     }
 
     private suspend fun loadLocked(
-        model: ModelEntity,
-        choice: BackendChoice,
+        requestedModel: ModelEntity,
+        requested: BackendChoice?,
     ) {
+        // Settings may have changed since the caller read the model.
+        val model = library.get(requestedModel.id) ?: requestedModel
+        val settings = library.settingsOf(model)
+        val choice = requested ?: settings.load.backend.toChoice()
+
         val runtimeState = runtime.state.first { it !is GenieXRuntime.State.Starting }
         if (runtimeState is GenieXRuntime.State.Failed) {
             _state.value = State.Failed(model, "The on-device runtime didn't start: ${runtimeState.reason}", false)
@@ -164,9 +178,11 @@ class InferenceEngine(
                 return
             }
 
-        val contextSize = defaultContextSize(model)
         var lastError = "Couldn't load this model"
+        val cores = Runtime.getRuntime().availableProcessors()
         for (backend in candidates) {
+            val resolved = settings.load.resolve(backend, model.contextLength, cores)
+            val draftPath = resolved.draftModelId?.let { openDraft(it) }
             _state.value = State.Loading(model, backend)
             prefs.edit().putString(KEY_PENDING_LOAD, "${model.id}|${backend.computeUnit}").commit()
             val result =
@@ -177,13 +193,7 @@ class InferenceEngine(
                             LlmCreateInput(
                                 model_path = opened.path,
                                 tokenizer_path = null,
-                                config =
-                                    ModelConfig(
-                                        nCtx = contextSize,
-                                        nThreads = threadCount(),
-                                        nThreadsBatch = threadCount(),
-                                        nGpuLayers = backend.gpuLayers,
-                                    ),
+                                config = resolved.toModelConfig(draftPath),
                                 runtime_id = RuntimeIdValue.LLAMA_CPP.value,
                                 compute_unit = backend.computeUnit,
                             ),
@@ -195,9 +205,10 @@ class InferenceEngine(
                 wrapper = loaded
                 handle = opened
                 library.recordLoaded(model.id, backend.computeUnit)
-                _state.value = State.Ready(model, backend, contextSize)
+                _state.value = State.Ready(library.get(model.id) ?: model, backend, resolved.copy(draftModelId = resolved.draftModelId.takeIf { draftPath != null }))
                 return
             }
+            closeDraft()
             lastError = result.exceptionOrNull()?.message ?: lastError
             Log.w(TAG, "Load on ${backend.label} failed: $lastError")
         }
@@ -212,6 +223,42 @@ class InferenceEngine(
                 canGrantFileAccess = inPlace && !library.hasAllFilesAccess(),
             )
     }
+
+    /** Opens the speculative-decoding draft model; a missing one just disables drafting. */
+    private suspend fun openDraft(id: String): String? {
+        closeDraft()
+        val draft = library.get(id) ?: return null
+        return runCatching { library.open(draft) }
+            .onFailure { Log.w(TAG, "Draft model unavailable: ${it.message}") }
+            .getOrNull()
+            ?.also { draftHandle = it }
+            ?.path
+    }
+
+    private fun closeDraft() {
+        draftHandle?.close()
+        draftHandle = null
+    }
+
+    private fun ResolvedLoad.toModelConfig(draftPath: String?) =
+        ModelConfig(
+            nCtx = contextSize,
+            nThreads = threads,
+            nThreadsBatch = batchThreads,
+            nBatch = batchSize,
+            nUBatch = microBatch,
+            nGpuLayers = gpuLayers,
+            chat_template_content = chatTemplate,
+            // "draft" without a usable draft model would fail the whole load; fall back to plain decoding.
+            spec_type = if (speculative == "none" || (speculative == "draft" && draftPath == null)) "" else speculative,
+            spec_draft_model = draftPath.orEmpty(),
+            spec_n_max = draftMax,
+            spec_n_min = draftMin,
+            spec_p_min = draftMinProbability,
+            power_mode = powerMode,
+        )
+
+    private fun String.toChoice(): BackendChoice = Backend.fromUnit(this)?.let { BackendChoice.Only(it) } ?: BackendChoice.Auto
 
     private fun candidatesFor(
         model: ModelEntity,
@@ -269,14 +316,17 @@ class InferenceEngine(
             _generation.value = null
             return
         }
-        val settings = GenerationSettings.Default
+        val settings = library.settingsOf(library.get(ready.model.id) ?: ready.model)
+        val sampling = settings.sampling
+        val chat = settings.chat
+        val allTurns = history.map { Turn(it.role, it.content) }
         val turns =
-            fitToContext(
-                systemPrompt = systemPrompt,
-                turns = history.map { Turn(it.role, it.content) },
-                contextTokens = ready.contextSize,
-                reservedForReply = settings.maxTokens,
-            )
+            if (chat.trimHistory) {
+                fitToContext(systemPrompt, allTurns, ready.contextSize, reservedForReply = sampling.maxTokens)
+            } else {
+                allTurns
+            }
+        val keepTokens = if (chat.keepTokens > 0) chat.keepTokens else estimateTokens(systemPrompt) + SYSTEM_OVERHEAD
         val messages =
             buildList {
                 if (systemPrompt.isNotBlank()) add(ChatMessage(role = "system", content = systemPrompt))
@@ -289,7 +339,7 @@ class InferenceEngine(
         try {
             val prompt =
                 llm
-                    .applyChatTemplate(messages.toTypedArray(), null, settings.enableThinking, true)
+                    .applyChatTemplate(messages.toTypedArray(), null, chat.thinking, true)
                     .getOrThrow()
                     .formattedText
             val startsInThinking = prompt.trimEnd().endsWith("<think>")
@@ -299,7 +349,7 @@ class InferenceEngine(
                 _generation.value =
                     Generation(conversationId, messageId, split.content, split.thinking, split.thinkingOpen, started = raw.isNotEmpty())
             }
-            llm.generateStreamFlow(prompt, settings.toGenerationConfig()).collect { result ->
+            llm.generateStreamFlow(prompt, generationConfig(sampling, chat, keepTokens)).collect { result ->
                 when (result) {
                     is LlmStreamResult.Token -> {
                         raw.append(result.text)
@@ -351,70 +401,41 @@ class InferenceEngine(
         wrapper = null
         handle?.close()
         handle = null
+        closeDraft()
     }
 
-    private fun defaultContextSize(model: ModelEntity): Int = (model.contextLength ?: DEFAULT_CONTEXT).coerceIn(512, DEFAULT_CONTEXT)
-
-    /** llama.cpp scales poorly onto efficiency cores; leave a couple free. */
-    private fun threadCount(): Int = (Runtime.getRuntime().availableProcessors() - 2).coerceIn(2, 6)
+    private fun generationConfig(
+        sampling: Sampling,
+        chat: ChatOptions,
+        keepTokens: Int,
+    ): GenerationConfig {
+        val stops = sampling.stopSequences.filter { it.isNotEmpty() }
+        return GenerationConfig(
+            maxTokens = sampling.maxTokens,
+            stopWords = stops.toTypedArray().takeIf { it.isNotEmpty() },
+            stopCount = stops.size,
+            samplerConfig =
+                SamplerConfig(
+                    temperature = sampling.temperature,
+                    topP = sampling.topP,
+                    topK = sampling.topK,
+                    minP = sampling.minP,
+                    repetitionPenalty = sampling.repetitionPenalty,
+                    presencePenalty = sampling.presencePenalty,
+                    frequencyPenalty = sampling.frequencyPenalty,
+                    seed = sampling.seed,
+                    grammarString = sampling.grammar.takeIf { it.isNotBlank() },
+                ),
+            slidingWindow = chat.slidingWindow,
+            slidingWindowNKeep = keepTokens,
+        )
+    }
 
     private companion object {
         const val TAG = "InferenceEngine"
         const val KEY_PENDING_LOAD = "pending_load"
-        const val DEFAULT_CONTEXT = 4096
+        /** Template tokens around the system prompt, kept with it when the window shifts. */
+        const val SYSTEM_OVERHEAD = 16
         const val FRAME_MS = 33L
-    }
-}
-
-/**
- * Sampling and length settings. The SDK's own defaults (32 max tokens, every
- * sampler value 0) are unusable, so every field is set explicitly.
- * These become user-tunable in the parameters sheet.
- */
-data class GenerationSettings(
-    val maxTokens: Int,
-    val temperature: Float,
-    val topP: Float,
-    val topK: Int,
-    val minP: Float,
-    val repetitionPenalty: Float,
-    val presencePenalty: Float,
-    val frequencyPenalty: Float,
-    /** -1 picks a fresh random seed for every reply. */
-    val seed: Int,
-    val enableThinking: Boolean,
-) {
-    fun toGenerationConfig() =
-        GenerationConfig(
-            maxTokens = maxTokens,
-            samplerConfig =
-                SamplerConfig(
-                    temperature = temperature,
-                    topP = topP,
-                    topK = topK,
-                    minP = minP,
-                    repetitionPenalty = repetitionPenalty,
-                    presencePenalty = presencePenalty,
-                    frequencyPenalty = frequencyPenalty,
-                    seed = seed,
-                ),
-            // Safety net: if a reply outgrows the window mid-generation, shift instead of failing.
-            slidingWindow = true,
-        )
-
-    companion object {
-        val Default =
-            GenerationSettings(
-                maxTokens = 1024,
-                temperature = 0.7f,
-                topP = 0.95f,
-                topK = 40,
-                minP = 0.05f,
-                repetitionPenalty = 1.1f,
-                presencePenalty = 0f,
-                frequencyPenalty = 0f,
-                seed = -1,
-                enableThinking = false,
-            )
     }
 }
