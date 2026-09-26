@@ -47,7 +47,7 @@ data class MessageEntity(
     /** Tokens guessed by speculative decoding for this reply, and how many the model accepted. */
     val draftTokens: Long? = null,
     val draftAccepted: Long? = null,
-    /** With speculative decoding: this reply's speed divided by the same model's plain speed on the same backend. */
+    /** Unused; kept so databases already migrated to v6 still match the schema. */
     val speedupVsPlain: Double? = null,
 )
 

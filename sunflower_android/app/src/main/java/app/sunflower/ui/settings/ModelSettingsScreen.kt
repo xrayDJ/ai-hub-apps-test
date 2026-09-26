@@ -528,7 +528,7 @@ private fun LoadingTab(
                 if (l.speculative != "none" && backend != Backend.CPU) {
                     Text(
                         "On phone ${backend.label}s, checking guesses and passing the model's state to the helper often costs more than it saves, " +
-                            "so replies can be slower than without it. Each reply's stats compare its speed with plain generation.",
+                            "so replies can be slower than without it.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(bottom = 8.dp),

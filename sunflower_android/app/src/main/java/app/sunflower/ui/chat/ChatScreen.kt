@@ -523,11 +523,7 @@ private fun ThinkingBlock(
 
 private fun statsLine(message: MessageEntity): String? {
     val speed = message.decodeTokensPerSec?.takeIf { it > 0 } ?: return null
-    val speedText = String.format(Locale.US, "%.1f tok/s", speed)
-    val parts =
-        mutableListOf(
-            message.speedupVsPlain?.let { speedText + String.format(Locale.US, " (×%.1f vs plain)", it) } ?: speedText,
-        )
+    val parts = mutableListOf(String.format(Locale.US, "%.1f tok/s", speed))
     // The runtime's first-token time isn't always meaningful (e.g. with speculation); skip values too small to be real.
     message.ttftMs?.takeIf { it >= 5 }?.let { ms ->
         parts += if (ms < 1000) "${ms.toInt()} ms to first token" else String.format(Locale.US, "%.1f s to first token", ms / 1000)
