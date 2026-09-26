@@ -26,7 +26,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -64,15 +63,9 @@ fun ModelsScreen(onBack: () -> Unit) {
             contentAlignment = Alignment.Center,
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                SunflowerMark(size = 96.dp)
+                SunflowerMark(size = 72.dp)
                 Text(
-                    "Bring your own model",
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    textAlign = TextAlign.Center,
-                )
-                Text(
-                    "Pick any .gguf file from your phone. It runs entirely on-device on the NPU, GPU or CPU.",
+                    "No models yet",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
@@ -86,16 +79,14 @@ fun ModelsScreen(onBack: () -> Unit) {
             exit = fadeOut(Motion.exit()) + slideOutVertically { it },
         ) {
             Text(
-                "Picked ${picked.orEmpty()}. Loading models arrives in the next build.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                "${picked.orEmpty()} · loading comes in the next build",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
                 modifier =
                     Modifier
                         .padding(horizontal = 20.dp)
-                        .fillMaxWidth()
-                        .clip(MaterialTheme.shapes.large)
-                        .background(MaterialTheme.colorScheme.primaryContainer)
-                        .padding(16.dp),
+                        .fillMaxWidth(),
             )
         }
 

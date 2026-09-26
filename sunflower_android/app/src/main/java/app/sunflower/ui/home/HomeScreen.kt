@@ -1,10 +1,7 @@
 package app.sunflower.ui.home
 
 import android.text.format.DateUtils
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -33,21 +30,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import app.sunflower.data.db.ConversationEntity
 import app.sunflower.engine.GenieXRuntime
@@ -93,25 +84,21 @@ fun HomeScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item { Header(onOpenModels, Modifier.statusBarsPadding()) }
-            item { Hero(Modifier.padding(top = 28.dp, bottom = 24.dp)) }
-            item { ModelCard(state.runtime, onOpenModels) }
-            item {
-                Text(
-                    "Recent",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = colors.onBackground,
-                    modifier = Modifier.padding(top = 26.dp, bottom = 4.dp),
-                )
-            }
-            when {
-                state.storageError != null ->
-                    item { Notice("Couldn't open your encrypted chats: ${state.storageError}") }
-                !state.loading && state.conversations.isEmpty() ->
-                    item { Notice("No conversations yet. Whatever you say here stays encrypted on this phone.") }
-                else ->
-                    items(state.conversations, key = { it.id }) { conversation ->
-                        ConversationRow(conversation, { onOpenChat(conversation.id) }, Modifier.animateItem())
-                    }
+            item { ModelCard(state.runtime, onOpenModels, Modifier.padding(top = 24.dp)) }
+            if (state.storageError != null) {
+                item { Notice("Couldn't open saved chats: ${state.storageError}") }
+            } else if (state.conversations.isNotEmpty()) {
+                item {
+                    Text(
+                        "Recent",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = colors.onBackground,
+                        modifier = Modifier.padding(top = 26.dp, bottom = 4.dp),
+                    )
+                }
+                items(state.conversations, key = { it.id }) { conversation ->
+                    ConversationRow(conversation, { onOpenChat(conversation.id) }, Modifier.animateItem())
+                }
             }
         }
 
@@ -148,58 +135,40 @@ private fun Header(
 }
 
 @Composable
-private fun Hero(modifier: Modifier = Modifier) {
-    var shown by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { shown = true }
-    val accent = MaterialTheme.colorScheme.primary
-    AnimatedVisibility(
-        visible = shown,
-        enter = fadeIn(Motion.enter()) + slideInVertically(Motion.slide) { it / 3 },
-        modifier = modifier,
-    ) {
-        Text(
-            buildAnnotatedString {
-                append("Your AI.\nYour phone.\n")
-                withStyle(SpanStyle(color = accent)) { append("Nowhere else.") }
-            },
-            style = MaterialTheme.typography.displayMedium,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
-    }
-}
-
-@Composable
 private fun ModelCard(
     runtime: GenieXRuntime.State,
     onOpenModels: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
-    val (status, detail) =
+    val status =
         when (runtime) {
-            GenieXRuntime.State.Starting -> "Warming up" to "Starting the on-device runtime…"
-            GenieXRuntime.State.Ready -> "No model loaded" to "Import any GGUF from your storage to start chatting."
-            is GenieXRuntime.State.Failed -> "Runtime unavailable" to runtime.reason
+            GenieXRuntime.State.Starting -> "Starting"
+            GenieXRuntime.State.Ready -> "No model loaded"
+            is GenieXRuntime.State.Failed -> "Runtime unavailable"
         }
     Column(
-        Modifier
+        modifier
             .fillMaxWidth()
             .clip(MaterialTheme.shapes.extraLarge)
             .background(colors.surfaceContainer)
             .border(1.dp, colors.outlineVariant, MaterialTheme.shapes.extraLarge)
-            .padding(20.dp),
+            .padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             StatusDot(ok = runtime == GenieXRuntime.State.Ready, busy = runtime == GenieXRuntime.State.Starting)
             Spacer(Modifier.width(10.dp))
-            Text(status, style = MaterialTheme.typography.titleMedium, color = colors.onSurface)
+            Text(status, style = MaterialTheme.typography.titleMedium, color = colors.onSurface, modifier = Modifier.weight(1f))
+            SunButton("Models", onOpenModels, style = SunButtonStyle.Ghost)
         }
-        Text(
-            detail,
-            style = MaterialTheme.typography.bodyMedium,
-            color = colors.onSurfaceVariant,
-            modifier = Modifier.padding(top = 6.dp, bottom = 16.dp),
-        )
-        SunButton("Import a model", onOpenModels, icon = SunIcons.Import, style = SunButtonStyle.Tonal)
+        if (runtime is GenieXRuntime.State.Failed) {
+            Text(
+                runtime.reason,
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.onSurfaceVariant,
+                modifier = Modifier.padding(end = 12.dp, bottom = 10.dp),
+            )
+        }
     }
 }
 
