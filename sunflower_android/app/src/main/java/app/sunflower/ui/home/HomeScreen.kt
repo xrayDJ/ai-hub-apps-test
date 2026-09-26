@@ -35,6 +35,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -71,6 +72,7 @@ fun HomeScreen(
     onOpenModels: () -> Unit,
     onDelete: (String) -> Unit,
     onResetStorage: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
     var confirmingId by remember { mutableStateOf<String?>(null) }
@@ -98,7 +100,7 @@ fun HomeScreen(
             contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 120.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            item { Header(onOpenModels, Modifier.statusBarsPadding()) }
+            item { Header(onOpenModels, onOpenSettings, Modifier.statusBarsPadding()) }
             item { ModelCard(state.runtime, state.engine, onOpenModels, Modifier.padding(top = 24.dp)) }
             if (state.storageError != null) {
                 item { StorageRecovery(state.storageError, onResetStorage) }
@@ -146,6 +148,7 @@ fun HomeScreen(
 @Composable
 private fun Header(
     onOpenModels: () -> Unit,
+    onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -159,6 +162,8 @@ private fun Header(
         Text("sunflower", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onBackground)
         Spacer(Modifier.weight(1f))
         SunIconButton(SunIcons.Layers, "Models", onOpenModels)
+        Spacer(Modifier.width(8.dp))
+        SunIconButton(Icons.Outlined.Settings, "Settings", onOpenSettings)
     }
 }
 

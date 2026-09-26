@@ -19,6 +19,8 @@ class AppContainer(context: Context) {
 
     val keyVault = KeyVault(context)
 
+    val preferences = AppPreferences(context)
+
     // Unwrapping the key touches the hardware keystore, so it never runs on the main thread.
     private val database = appScope.async(Dispatchers.IO) { SunflowerDatabase.open(context, keyVault) }
 
@@ -46,6 +48,7 @@ class AppContainer(context: Context) {
         java.io.File(appContext.filesDir, "models").deleteRecursively()
         appContext.getSharedPreferences("engine", Context.MODE_PRIVATE).edit().clear().commit()
         appContext.getSharedPreferences("crash_reports", Context.MODE_PRIVATE).edit().clear().commit()
+        appContext.getSharedPreferences("ui", Context.MODE_PRIVATE).edit().clear().commit()
         val launch =
             appContext.packageManager.getLaunchIntentForPackage(appContext.packageName)
                 ?.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)

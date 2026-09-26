@@ -287,5 +287,8 @@ fun copyToClipboard(
     text: String,
 ) {
     val clipboard = context.getSystemService(ClipboardManager::class.java) ?: return
-    clipboard.setPrimaryClip(ClipData.newPlainText("Sunflower", text))
+    val clip = ClipData.newPlainText("Sunflower", text)
+    // Keeps the system's copy confirmation from previewing private text.
+    clip.description.extras = android.os.PersistableBundle().apply { putBoolean("android.content.extra.IS_SENSITIVE", true) }
+    clipboard.setPrimaryClip(clip)
 }

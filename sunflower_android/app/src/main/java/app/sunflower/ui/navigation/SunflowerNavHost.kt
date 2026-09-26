@@ -22,6 +22,7 @@ import app.sunflower.ui.home.HomeScreen
 import app.sunflower.ui.home.HomeViewModel
 import app.sunflower.ui.models.ModelsScreen
 import app.sunflower.ui.models.ModelsViewModel
+import app.sunflower.ui.settings.AppSettingsScreen
 import app.sunflower.ui.settings.ModelSettingsScreen
 import app.sunflower.ui.settings.ModelSettingsViewModel
 import app.sunflower.ui.theme.Motion
@@ -32,6 +33,9 @@ object HomeRoute
 
 @Serializable
 object ModelsRoute
+
+@Serializable
+object AppSettingsRoute
 
 /** Settings for one model; [conversationId] lets the screen show that chat's system prompt budget. */
 @Serializable
@@ -75,7 +79,17 @@ fun SunflowerNavHost(
                 onOpenChat = { nav.navigate(ChatRoute(it)) },
                 onOpenModels = { nav.navigate(ModelsRoute) },
                 onDelete = vm::delete,
+                onOpenSettings = { nav.navigate(AppSettingsRoute) },
                 onResetStorage = container::wipeAndRestart,
+            )
+        }
+        composable<AppSettingsRoute> {
+            val prefs by container.preferences.state.collectAsStateWithLifecycle()
+            AppSettingsScreen(
+                prefs = prefs,
+                onUpdate = container.preferences::update,
+                onDeleteAll = container::wipeAndRestart,
+                onBack = { nav.popBackStack() },
             )
         }
         composable<ModelsRoute> {
