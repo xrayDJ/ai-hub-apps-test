@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Only what the system draws before Compose takes over: launcher icon and splash. -->
+    <color name="ink">#FF0C0B09</color>
+</resources>
