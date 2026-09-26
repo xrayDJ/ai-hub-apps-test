@@ -5,7 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.sunflower.data.ModelLibrary
 import app.sunflower.data.db.ModelEntity
-import app.sunflower.engine.BackendChoice
+import app.sunflower.engine.CrashReport
 import app.sunflower.engine.InferenceEngine
 import app.sunflower.engine.NotGgufException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,6 +24,7 @@ data class ModelsState(
     val importError: String? = null,
     /** Copy progress (0..1) by model id. */
     val copying: Map<String, Float> = emptyMap(),
+    val crashReports: Map<String, CrashReport> = emptyMap(),
 )
 
 class ModelsViewModel(
@@ -39,13 +40,12 @@ class ModelsViewModel(
 
     val state: StateFlow<ModelsState> =
         combine(
-            library.observe().catch { emit(emptyList()) },
-            engine.state,
+            combine(library.observe().catch { emit(emptyList()) }, engine.state, engine.crashReports.reports, ::Triple),
             importing,
             importError,
             copying,
-        ) { models, engineState, isImporting, error, copies ->
-            ModelsState(models, engineState, isImporting, error, copies)
+        ) { (models, engineState, crashes), isImporting, error, copies ->
+            ModelsState(models, engineState, isImporting, error, copies, crashes)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ModelsState())
 
     fun import(uri: Uri) {
@@ -64,6 +64,12 @@ class ModelsViewModel(
                 importing.value = false
             }
         }
+    }
+
+    fun dismissCrash(model: ModelEntity) = engine.crashReports.dismiss(model.id)
+
+    fun retryCrashedBackends(model: ModelEntity) {
+        viewModelScope.launch { library.clearCrashes(model.id) }
     }
 
     fun requestedFileAccess(model: ModelEntity) {

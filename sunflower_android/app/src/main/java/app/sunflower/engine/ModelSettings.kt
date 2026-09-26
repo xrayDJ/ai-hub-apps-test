@@ -197,7 +197,7 @@ fun speculativeLabel(type: String): String =
     when (type) {
         "none" -> "Off"
         "draft" -> "Draft model"
-        "draft-mtp" -> "Built-in MTP"
+        "draft-mtp" -> "Built-in MTP (experimental)"
         "draft-eagle3" -> "EAGLE3 head"
         "ngram-simple" -> "N-gram"
         "ngram-map-k" -> "N-gram map"

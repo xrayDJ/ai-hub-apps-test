@@ -54,6 +54,13 @@ import app.sunflower.data.db.ModelEntity
 import app.sunflower.data.displayName
 import app.sunflower.data.failedSet
 import app.sunflower.engine.Backend
+import app.sunflower.engine.CrashReport
+import app.sunflower.engine.speculativeLabel
+import app.sunflower.ui.markdown.copyToClipboard
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.heightIn
 import app.sunflower.engine.EAGLE3_ARCH
 import app.sunflower.engine.LoadOptions
 import app.sunflower.engine.ModelSettings
@@ -83,6 +90,8 @@ fun ModelsScreen(
     onCopyIntoApp: (ModelEntity) -> Unit,
     onRequestFileAccess: (ModelEntity) -> Unit,
     onResume: () -> Unit,
+    onDismissCrash: (ModelEntity) -> Unit,
+    onRetryCrashedBackends: (ModelEntity) -> Unit,
 ) {
     val context = LocalContext.current
     LifecycleResumeEffect(Unit) {
@@ -136,6 +145,9 @@ fun ModelsScreen(
                             onRequestFileAccess(model)
                             openAllFilesAccessSettings(context)
                         },
+                        crashReport = state.crashReports[model.id],
+                        onDismissCrash = { onDismissCrash(model) },
+                        onRetryCrashedBackends = { onRetryCrashedBackends(model) },
                         modifier = Modifier.animateItem(),
                     )
                 }
@@ -185,6 +197,9 @@ private fun ModelCard(
     onRemove: () -> Unit,
     onCopyIntoApp: () -> Unit,
     onAllowFileAccess: () -> Unit,
+    crashReport: CrashReport?,
+    onDismissCrash: () -> Unit,
+    onRetryCrashedBackends: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -219,6 +234,8 @@ private fun ModelCard(
             style = CodeStyle.copy(fontSize = MaterialTheme.typography.labelSmall.fontSize),
             color = colors.onSurfaceVariant,
         )
+
+        if (crashReport != null) CrashNotice(crashReport, onDismissCrash)
 
         when {
             model.architecture == EAGLE3_ARCH ->
@@ -275,11 +292,15 @@ private fun ModelCard(
                 }
                 val crashed = model.failedSet().mapNotNull { Backend.fromUnit(it)?.label }
                 if (crashed.isNotEmpty()) {
-                    Text(
-                        "${crashed.joinToString(" and ")} stopped the app last time, so Auto skips ${if (crashed.size == 1) "it" else "them"}.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.onSurfaceVariant,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "${crashed.joinToString(" and ")} stopped the app before, so Auto skips ${if (crashed.size == 1) "it" else "them"}.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.onSurfaceVariant,
+                            modifier = Modifier.weight(1f),
+                        )
+                        SunButton("Try again", onRetryCrashedBackends, style = SunButtonStyle.Ghost)
+                    }
                 }
                 if (model.localPath != null) {
                     Text("Stored inside Sunflower", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
@@ -289,6 +310,55 @@ private fun ModelCard(
                     SunButton("Remove", onRemove, style = SunButtonStyle.Ghost, enabled = !(mine && busy))
                 }
             }
+        }
+    }
+}
+
+/** What the last crash was, what Sunflower changed, and the engine's log on request. */
+@Composable
+private fun CrashNotice(
+    report: CrashReport,
+    onDismiss: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    val context = LocalContext.current
+    var showLog by remember { mutableStateOf(false) }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.medium)
+            .background(colors.surfaceContainerHigh)
+            .padding(start = 14.dp, end = 4.dp, top = 10.dp, bottom = 4.dp),
+    ) {
+        Text(
+            buildString {
+                append("The app stopped while ${report.stage} on ${report.backend}")
+                if (report.speculative != "none") append(" with ${speculativeLabel(report.speculative)}")
+                append(". ")
+                report.action?.let { append(it) }
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.onSurface,
+            modifier = Modifier.padding(end = 10.dp),
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            SunButton(if (showLog) "Hide details" else "Details", { showLog = !showLog }, style = SunButtonStyle.Ghost)
+            SunButton("Copy", { copyToClipboard(context, report.log) }, style = SunButtonStyle.Ghost)
+            SunButton("Dismiss", onDismiss, style = SunButtonStyle.Ghost)
+        }
+        AnimatedVisibility(showLog, enter = fadeIn(Motion.enter()) + expandVertically(Motion.enter()), exit = fadeOut(Motion.exit()) + shrinkVertically(Motion.exit())) {
+            Text(
+                report.log,
+                style = CodeStyle.copy(fontSize = MaterialTheme.typography.labelSmall.fontSize),
+                color = colors.onSurfaceVariant,
+                softWrap = false,
+                modifier =
+                    Modifier
+                        .padding(end = 10.dp, bottom = 10.dp)
+                        .heightIn(max = 280.dp)
+                        .verticalScroll(rememberScrollState())
+                        .horizontalScroll(rememberScrollState()),
+            )
         }
     }
 }

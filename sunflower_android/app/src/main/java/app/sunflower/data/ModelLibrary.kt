@@ -213,6 +213,12 @@ class ModelLibrary(
         dao.upsert(model.copy(failedBackends = (model.failedSet() + backend).joinToString(",")))
     }
 
+    /** Forgets crashed backends so Auto tries them again. */
+    suspend fun clearCrashes(id: String) {
+        val dao = database().models()
+        dao.get(id)?.let { dao.upsert(it.copy(failedBackends = "")) }
+    }
+
     private fun describe(uri: Uri): Pair<String, Long> {
         resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { c ->
             if (c.moveToFirst()) {

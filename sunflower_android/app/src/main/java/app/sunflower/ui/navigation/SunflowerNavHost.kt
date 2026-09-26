@@ -92,6 +92,8 @@ fun SunflowerNavHost(
                 onSetBackend = vm::setBackend,
                 onOpenSettings = { nav.navigate(ModelSettingsRoute(it.id)) },
                 onResume = vm::onResume,
+                onDismissCrash = vm::dismissCrash,
+                onRetryCrashedBackends = vm::retryCrashedBackends,
             )
         }
         composable<ChatRoute> { entry ->

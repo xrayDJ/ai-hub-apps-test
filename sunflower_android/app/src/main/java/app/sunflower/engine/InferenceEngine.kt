@@ -119,14 +119,64 @@ class InferenceEngine(
     private var loadJob: Job? = null
     private var generateJob: Job? = null
 
+    val crashReports = CrashReports(context)
+
     init {
-        // A native crash while loading kills the process with no exception to catch.
-        // The marker written before each attempt survives it; blame that backend.
-        prefs.getString(KEY_PENDING_LOAD, null)?.let { pending ->
-            prefs.edit().remove(KEY_PENDING_LOAD).apply()
-            val (modelId, unit) = pending.split('|', limit = 2).let { it[0] to it.getOrNull(1) }
-            if (unit != null) scope.launch { library.recordCrash(modelId, unit) }
+        // A native crash kills the process with no exception to catch. The marker
+        // written before each risky step survives it, so the next launch knows what
+        // was running and can keep the next attempt from crashing the same way.
+        val pending =
+            prefs.getString(KEY_PENDING_LOAD, null)?.let { "loading" to it }
+                ?: prefs.getString(KEY_PENDING_GENERATE, null)?.let { "replying" to it }
+        if (pending != null) {
+            prefs.edit().remove(KEY_PENDING_LOAD).remove(KEY_PENDING_GENERATE).apply()
+            val (stage, marker) = pending
+            val parts = marker.split('|')
+            val modelId = parts[0]
+            val unit = parts.getOrNull(1).orEmpty()
+            val speculative = parts.getOrNull(2).orEmpty().ifEmpty { "none" }
+            scope.launch(Dispatchers.IO) { handleCrash(modelId, stage, unit, speculative) }
         }
+    }
+
+    /**
+     * With speculative decoding on, that is the likelier culprit than the backend:
+     * turn it off for this model. Otherwise a crash while loading marks the backend
+     * so Auto skips it. Either way, keep a report the user can read and share.
+     */
+    private suspend fun handleCrash(
+        modelId: String,
+        stage: String,
+        unit: String,
+        speculative: String,
+    ) {
+        val backendLabel = Backend.fromUnit(unit)?.label ?: unit
+        val action =
+            when {
+                speculative != "none" -> {
+                    library.get(modelId)?.let { model ->
+                        val settings = library.settingsOf(model)
+                        library.updateSettings(model.id, settings.copy(load = settings.load.copy(speculative = "none", draftModelId = null)))
+                    }
+                    "${speculativeLabel(speculative)} was turned off for this model."
+                }
+                stage == "loading" && unit.isNotEmpty() -> {
+                    library.recordCrash(modelId, unit)
+                    "Auto will skip $backendLabel for this model."
+                }
+                else -> null
+            }
+        crashReports.save(
+            CrashReport(
+                modelId = modelId,
+                stage = stage,
+                backend = backendLabel,
+                speculative = speculative,
+                time = System.currentTimeMillis(),
+                log = CrashReports.captureLog(),
+                action = action,
+            ),
+        )
     }
 
     /** Loads [model] with its saved settings. [choice] overrides the saved backend for this load only. */
@@ -190,7 +240,7 @@ class InferenceEngine(
             val resolved = settings.load.resolve(backend, model.contextLength, cores)
             val draftPath = resolved.draftModelId?.let { openDraft(it) }
             _state.value = State.Loading(model, backend)
-            prefs.edit().putString(KEY_PENDING_LOAD, "${model.id}|${backend.computeUnit}").commit()
+            prefs.edit().putString(KEY_PENDING_LOAD, "${model.id}|${backend.computeUnit}|${resolved.speculative}").commit()
             val result =
                 withContext(Dispatchers.IO) {
                     LlmWrapper
@@ -356,6 +406,7 @@ class InferenceEngine(
                 _generation.value =
                     Generation(conversationId, messageId, split.content, split.thinking, split.thinkingOpen, started = raw.isNotEmpty())
             }
+            prefs.edit().putString(KEY_PENDING_GENERATE, "${ready.model.id}|${ready.backend.computeUnit}|${ready.applied.speculative}").commit()
             llm.generateStreamFlow(prompt, generationConfig(sampling, chat, keepTokens)).collect { result ->
                 when (result) {
                     is LlmStreamResult.Token -> {
@@ -397,6 +448,7 @@ class InferenceEngine(
         } catch (e: Exception) {
             error = e.message ?: e.javaClass.simpleName
         } finally {
+            prefs.edit().remove(KEY_PENDING_GENERATE).apply()
             _generation.value = null
             error?.let {
                 Log.w(TAG, "Generation failed: $it")
@@ -443,6 +495,7 @@ class InferenceEngine(
     private companion object {
         const val TAG = "InferenceEngine"
         const val KEY_PENDING_LOAD = "pending_load"
+        const val KEY_PENDING_GENERATE = "pending_generate"
         /** Template tokens around the system prompt, kept with it when the window shifts. */
         const val SYSTEM_OVERHEAD = 16
         const val FRAME_MS = 33L
