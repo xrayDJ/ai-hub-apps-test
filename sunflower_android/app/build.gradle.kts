@@ -15,8 +15,9 @@ android {
         applicationId = "app.sunflower"
         minSdk = 31
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        // CI's run number keeps every build's version increasing, so updates always install.
+        versionCode = (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0) + 100
+        versionName = "1.0.0"
 
         // The GenieX runtimes (llama.cpp, Hexagon NPU, OpenCL) ship arm64-v8a only.
         ndk { abiFilters += "arm64-v8a" }
@@ -58,6 +59,21 @@ android {
         checkReleaseBuilds = false
         // Translations and the GGUF-picking flow are intentional; see README.
         disable += setOf("MissingTranslation")
+    }
+
+    flavorDimensions += "distribution"
+    productFlavors {
+        // Sideloaded build: may request "All files access" to load models in place.
+        create("full") {
+            dimension = "distribution"
+            buildConfigField("boolean", "ALL_FILES_ACCESS", "true")
+        }
+        // Google Play build: that permission is restricted there, so it is left out;
+        // "Copy into app" covers phones where in-place loading fails.
+        create("play") {
+            dimension = "distribution"
+            buildConfigField("boolean", "ALL_FILES_ACCESS", "false")
+        }
     }
 
     compileOptions {

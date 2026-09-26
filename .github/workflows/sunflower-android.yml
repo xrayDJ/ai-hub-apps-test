@@ -39,10 +39,10 @@ jobs:
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;35.0.0"
 
       - name: Unit tests
-        run: ./gradlew testDebugUnitTest --stacktrace
+        run: ./gradlew testFullDebugUnitTest --stacktrace
 
       - name: Lint
-        run: ./gradlew lintDebug
+        run: ./gradlew lintFullDebug lintPlayDebug
 
       # Only when the owner has added an upload key as repository secrets.
       - name: Decode upload key
@@ -59,20 +59,20 @@ jobs:
           SUNFLOWER_UPLOAD_KEY_ALIAS: ${{ secrets.SUNFLOWER_UPLOAD_KEY_ALIAS }}
           SUNFLOWER_UPLOAD_KEY_PASSWORD: ${{ secrets.SUNFLOWER_UPLOAD_KEY_PASSWORD }}
         run: |
-          ./gradlew assembleRelease --stacktrace
-          if [ -n "$SUNFLOWER_UPLOAD_KEYSTORE_FILE" ]; then ./gradlew bundleRelease --stacktrace; fi
-          apk=app/build/outputs/apk/release/app-release.apk
+          ./gradlew assembleFullRelease --stacktrace
+          if [ -n "$SUNFLOWER_UPLOAD_KEYSTORE_FILE" ]; then ./gradlew bundlePlayRelease --stacktrace; fi
+          apk=app/build/outputs/apk/full/release/app-full-release.apk
           echo "### Sunflower release APK: $(du -h "$apk" | cut -f1)" >> "$GITHUB_STEP_SUMMARY"
           unzip -l "$apk" | awk '/lib\/arm64-v8a/{printf "%.1f MB  %s\n", $1/1048576, $4}' | sort -rn >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         with:
           name: sunflower-apk
-          path: sunflower_android/app/build/outputs/apk/release/app-release.apk
+          path: sunflower_android/app/build/outputs/apk/full/release/app-full-release.apk
           if-no-files-found: error
 
       - uses: actions/upload-artifact@v4
         if: ${{ env.HAS_UPLOAD_KEY == 'true' }}
         with:
           name: sunflower-play-bundle
-          path: sunflower_android/app/build/outputs/bundle/release/app-release.aab
+          path: sunflower_android/app/build/outputs/bundle/playRelease/app-play-release.aab

@@ -103,7 +103,10 @@ class ModelLibrary(
             ModelHandle(realPath ?: fdPath) { pfd.close() }
         }
 
-    fun hasAllFilesAccess(): Boolean = Environment.isExternalStorageManager()
+    /** Whether this build may ask for "All files access" at all (not on Google Play). */
+    val canRequestAllFilesAccess: Boolean get() = app.sunflower.BuildConfig.ALL_FILES_ACCESS
+
+    fun hasAllFilesAccess(): Boolean = canRequestAllFilesAccess && Environment.isExternalStorageManager()
 
     /**
      * Asks the kernel where an open descriptor points. This works for every

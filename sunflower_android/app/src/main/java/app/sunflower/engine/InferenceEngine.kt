@@ -304,7 +304,7 @@ class InferenceEngine(
                 model,
                 lastError,
                 canCopyIntoApp = inPlace,
-                canGrantFileAccess = inPlace && !library.hasAllFilesAccess(),
+                canGrantFileAccess = inPlace && library.canRequestAllFilesAccess && !library.hasAllFilesAccess(),
             )
     }
 
