@@ -43,6 +43,9 @@ data class MessageEntity(
     val generatedTokens: Long? = null,
     val ttftMs: Double? = null,
     val decodeTokensPerSec: Double? = null,
+    /** Tokens guessed by speculative decoding for this reply, and how many the model accepted. */
+    val draftTokens: Long? = null,
+    val draftAccepted: Long? = null,
 )
 
 @Entity(tableName = "system_prompts")
@@ -78,4 +81,6 @@ data class ModelEntity(
     val failedBackends: String,
     /** [app.sunflower.engine.ModelSettings] as JSON; null means all defaults. */
     val settings: String? = null,
+    /** Built-in MTP layers (0 = none); null until the header has been checked. */
+    val nextnLayers: Int? = null,
 )

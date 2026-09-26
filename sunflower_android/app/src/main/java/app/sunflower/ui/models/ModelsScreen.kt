@@ -54,6 +54,7 @@ import app.sunflower.data.db.ModelEntity
 import app.sunflower.data.displayName
 import app.sunflower.data.failedSet
 import app.sunflower.engine.Backend
+import app.sunflower.engine.EAGLE3_ARCH
 import app.sunflower.engine.LoadOptions
 import app.sunflower.engine.ModelSettings
 import app.sunflower.engine.InferenceEngine
@@ -220,6 +221,12 @@ private fun ModelCard(
         )
 
         when {
+            model.architecture == EAGLE3_ARCH ->
+                Text(
+                    "EAGLE3 head: not a chat model. Choose it under Speculative decoding in the settings of the model it was made for.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurfaceVariant,
+                )
             copyProgress != null -> {
                 SunProgress(copyProgress)
                 Text("Copying ${(copyProgress * 100).toInt()}%", style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
@@ -352,6 +359,7 @@ private fun describe(
         model.quantization,
         model.sizeBytes.takeIf { it > 0 }?.let { Formatter.formatShortFileSize(context, it) },
         model.contextLength?.let { "${it / 1024}k ctx" },
+        "MTP".takeIf { (model.nextnLayers ?: 0) > 0 },
     ).joinToString("  ·  ")
 
 private fun backendSummary(

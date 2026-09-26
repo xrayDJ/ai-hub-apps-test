@@ -501,6 +501,11 @@ private fun statsLine(message: MessageEntity): String? {
     val speed = message.decodeTokensPerSec?.takeIf { it > 0 } ?: return null
     val parts = mutableListOf(String.format(Locale.US, "%.1f tok/s", speed))
     message.ttftMs?.takeIf { it > 0 }?.let { parts += String.format(Locale.US, "%.1f s to first token", it / 1000) }
+    val drafted = message.draftTokens
+    val accepted = message.draftAccepted
+    if (drafted != null && drafted > 0 && accepted != null) {
+        parts += "${(accepted * 100 / drafted)}% of $drafted guesses accepted"
+    }
     return parts.joinToString("  ·  ")
 }
 

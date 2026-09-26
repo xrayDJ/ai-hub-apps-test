@@ -22,6 +22,8 @@ data class GgufInfo(
     val headCountKv: Int? = null,
     val keyLength: Int? = null,
     val valueLength: Int? = null,
+    /** Built-in multi-token-prediction (NextN) layers, usable for speculative decoding. */
+    val nextnLayers: Int? = null,
     /** Sampler values the model's authors recommend (general.sampling.*), if declared. */
     val recommendedSampling: Sampling? = null,
 ) {
@@ -29,6 +31,9 @@ data class GgufInfo(
      * Rough KV-cache size for [contextSize] tokens at 16-bit precision. Models
      * with sliding-window or state-space layers use less, so this is an upper bound.
      */
+    /** An EAGLE3 speculative head: not a chat model, only a helper for its target model. */
+    val isEagle3Head: Boolean get() = architecture == EAGLE3_ARCH
+
     fun kvCacheBytes(contextSize: Int): Long? {
         val layers = layerCount ?: return null
         val heads = headCount ?: return null
@@ -38,6 +43,8 @@ data class GgufInfo(
         return perToken * layers * contextSize
     }
 }
+
+const val EAGLE3_ARCH = "eagle3"
 
 class NotGgufException : Exception("This file isn't a GGUF model")
 
@@ -94,6 +101,7 @@ object GgufReader {
             headCountKv = arch?.let { ints["$it.attention.head_count_kv"]?.toInt() },
             keyLength = arch?.let { ints["$it.attention.key_length"]?.toInt() },
             valueLength = arch?.let { ints["$it.attention.value_length"]?.toInt() },
+            nextnLayers = arch?.let { ints["$it.nextn_predict_layers"]?.toInt() },
             recommendedSampling = recommendedSampling(ints, floats),
         )
     }

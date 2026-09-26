@@ -169,6 +169,12 @@ class InferenceEngine(
             return
         }
 
+        if (model.architecture == EAGLE3_ARCH) {
+            _state.value =
+                State.Failed(model, "This is an EAGLE3 head, not a chat model. Pick it under Speculative decoding in its target model's settings.", false)
+            return
+        }
+
         val candidates = candidatesFor(model, choice)
         val opened =
             try {
@@ -249,8 +255,8 @@ class InferenceEngine(
             nUBatch = microBatch,
             nGpuLayers = gpuLayers,
             chat_template_content = chatTemplate,
-            // "draft" without a usable draft model would fail the whole load; fall back to plain decoding.
-            spec_type = if (speculative == "none" || (speculative == "draft" && draftPath == null)) "" else speculative,
+            // A method that needs a helper file, without one, would fail the whole load; use plain decoding instead.
+            spec_type = if (speculative == "none" || (speculativeNeedsFile(speculative) && draftPath == null)) "" else speculative,
             spec_draft_model = draftPath.orEmpty(),
             spec_n_max = draftMax,
             spec_n_min = draftMin,
@@ -381,6 +387,8 @@ class InferenceEngine(
                         generatedTokens = profile?.generatedTokens,
                         ttftMs = profile?.ttftMs,
                         decodeTokensPerSec = profile?.decodingSpeed,
+                        draftTokens = profile?.draftNTotal?.takeIf { it > 0 },
+                        draftAccepted = profile?.draftNAccepted?.takeIf { (profile?.draftNTotal ?: 0) > 0 },
                     ),
                 )
                 conversations.setModelName(conversationId, ready.model.displayName)

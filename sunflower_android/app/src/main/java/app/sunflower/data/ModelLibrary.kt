@@ -76,6 +76,7 @@ class ModelLibrary(
                     addedAt = System.currentTimeMillis(),
                     lastBackend = null,
                     failedBackends = "",
+                    nextnLayers = info.nextnLayers ?: 0,
                 )
             dao.upsert(model)
             model
@@ -184,7 +185,13 @@ class ModelLibrary(
                     model.localPath?.takeIf { File(it).canRead() }?.let { File(it).inputStream() }
                         ?: resolver.openInputStream(Uri.parse(model.uri))
                 stream?.use { GgufReader.read(it) }
-            }.getOrNull()?.also { infoCache[model.id] = it }
+            }.getOrNull()?.also { info ->
+                infoCache[model.id] = info
+                // Models imported before MTP detection get it filled in the first time they're inspected.
+                if (model.nextnLayers == null) {
+                    database().models().get(model.id)?.let { database().models().upsert(it.copy(nextnLayers = info.nextnLayers ?: 0)) }
+                }
+            }
         }
 
     suspend fun recordLoaded(

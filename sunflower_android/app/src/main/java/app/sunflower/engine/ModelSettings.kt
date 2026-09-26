@@ -129,7 +129,7 @@ fun LoadOptions.resolve(
         powerMode = if (backend == Backend.NPU) powerMode else "",
         chatTemplate = chatTemplate,
         speculative = speculative,
-        draftModelId = if (speculative == "draft") draftModelId else null,
+        draftModelId = if (speculativeNeedsFile(speculative)) draftModelId else null,
         draftMax = draftMax,
         draftMin = draftMin,
         draftMinProbability = draftMinProbability,
@@ -163,7 +163,7 @@ fun ResolvedLoad.changesTo(next: ResolvedLoad): List<String> =
         diff("Chat template", chatTemplate.isNotBlank(), next.chatTemplate.isNotBlank()) { if (it) "custom" else "model's" }
         if (chatTemplate != next.chatTemplate && chatTemplate.isNotBlank() && next.chatTemplate.isNotBlank()) add("Chat template edited")
         diff("Speculative", speculative, next.speculative) { speculativeLabel(it) }
-        diff("Draft model", draftModelId, next.draftModelId) { if (it == null) "none" else "selected" }
+        diff("Helper file", draftModelId, next.draftModelId) { if (it == null) "none" else "selected" }
         diff("Draft max", draftMax, next.draftMax)
         diff("Draft min", draftMin, next.draftMin)
         diff("Draft min probability", draftMinProbability, next.draftMinProbability)
@@ -184,13 +184,21 @@ fun powerModeLabel(mode: String): String =
         else -> mode
     }
 
-/** Speculative decoding strategies in the bundled llama.cpp. Only "draft" needs a second model. */
-val SPECULATIVE_TYPES = listOf("none", "draft", "ngram-simple", "ngram-map-k", "ngram-map-k4v", "ngram-mod", "ngram-cache")
+/**
+ * Speculative decoding strategies in the bundled llama.cpp.
+ * "draft" and "draft-eagle3" need a second file; "draft-mtp" needs a model with built-in MTP layers.
+ */
+val SPECULATIVE_TYPES =
+    listOf("none", "draft-mtp", "draft", "draft-eagle3", "ngram-simple", "ngram-map-k", "ngram-map-k4v", "ngram-mod", "ngram-cache")
+
+fun speculativeNeedsFile(type: String): Boolean = type == "draft" || type == "draft-eagle3"
 
 fun speculativeLabel(type: String): String =
     when (type) {
         "none" -> "Off"
         "draft" -> "Draft model"
+        "draft-mtp" -> "Built-in MTP"
+        "draft-eagle3" -> "EAGLE3 head"
         "ngram-simple" -> "N-gram"
         "ngram-map-k" -> "N-gram map"
         "ngram-map-k4v" -> "N-gram map k4v"

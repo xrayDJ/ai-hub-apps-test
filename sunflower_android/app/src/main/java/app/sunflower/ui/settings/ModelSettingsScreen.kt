@@ -41,6 +41,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import app.sunflower.data.displayName
 import app.sunflower.data.failedSet
 import app.sunflower.engine.ALL_LAYERS
+import app.sunflower.engine.EAGLE3_ARCH
 import app.sunflower.engine.Backend
 import app.sunflower.engine.ChatOptions
 import app.sunflower.engine.InferenceEngine
@@ -55,6 +56,7 @@ import app.sunflower.engine.estimateTokens
 import app.sunflower.engine.powerModeLabel
 import app.sunflower.engine.sameSamplerAs
 import app.sunflower.engine.speculativeLabel
+import app.sunflower.engine.speculativeNeedsFile
 import app.sunflower.engine.withSamplerFrom
 import app.sunflower.ui.components.ScreenHeader
 import app.sunflower.ui.components.SunButton
@@ -493,34 +495,63 @@ private fun LoadingTab(
     }
 
     SettingSection("Speculative decoding") {
+        val mtpLayers = model.nextnLayers ?: state.info?.nextnLayers ?: 0
+        val hasMtp = mtpLayers > 0
+        // Built-in MTP only makes sense for models that carry MTP layers; keep it listed if it was chosen anyway.
+        val methods = SPECULATIVE_TYPES.filter { it != "draft-mtp" || hasMtp || l.speculative == it }
         ChoiceSetting(
             "Method",
-            "Guesses several tokens ahead and lets the model check them in one step. When guesses are right, replies come faster; the text is the same either way. " +
-                "Draft model uses a small model you've imported, which must share this model's tokenizer (for example Qwen3 0.6B with Qwen3 8B). " +
-                "The n-gram methods need no second model: they reuse patterns from the conversation and help most when replies repeat earlier text, like editing code.",
-            options = SPECULATIVE_TYPES,
+            "Guesses several tokens ahead and lets the model check them all in one step. When guesses are right, replies come faster; the text is the same either way. " +
+                "Built-in MTP uses prediction layers some models carry inside their own file, so nothing extra is loaded. " +
+                "Draft model uses a smaller model you've imported that shares this model's tokenizer (for example Qwen3 0.6B with Qwen3 8B). " +
+                "EAGLE3 head uses a tiny add-on file trained for this exact model, which reads the model's internal state to guess well. " +
+                "The n-gram methods need no extra file: they reuse patterns from the conversation and help most when replies repeat earlier text, like editing code. " +
+                "Each reply shows how many guesses were accepted, so you can tell whether it helps.",
+            options = methods,
             selected = l.speculative,
             default = d.speculative,
             label = ::speculativeLabel,
-            onChange = { v -> set { copy(speculative = v) } },
-        )
-        AnimatedVisibility(l.speculative == "draft") {
-            Column {
-                if (state.otherModels.isEmpty()) {
+            onChange = { v -> set { copy(speculative = v, draftModelId = draftModelId.takeIf { speculativeNeedsFile(v) }) } },
+            footer = {
+                if (hasMtp && l.speculative == "none") {
                     Text(
-                        "Import a smaller model from the same family to use as the draft.",
+                        "This model has $mtpLayers built-in MTP layer${if (mtpLayers == 1) "" else "s"}.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
+                }
+            },
+        )
+        AnimatedVisibility(speculativeNeedsFile(l.speculative)) {
+            val eagle = l.speculative == "draft-eagle3"
+            // EAGLE3 heads first for EAGLE3; heads are never offered as ordinary draft models.
+            val candidates =
+                if (eagle) {
+                    state.otherModels.sortedByDescending { it.architecture == EAGLE3_ARCH }
+                } else {
+                    state.otherModels.filter { it.architecture != EAGLE3_ARCH }
+                }
+            Column {
+                if (candidates.isEmpty()) {
+                    Text(
+                        if (eagle) "Import the EAGLE3 head made for this model first." else "Import a smaller model from the same family first.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier.padding(bottom = 8.dp),
                     )
                 } else {
                     ChoiceSetting(
-                        "Draft model",
-                        "The small model that makes the guesses. It is loaded alongside this one and uses extra memory.",
-                        options = listOf<String?>(null) + state.otherModels.map { it.id },
+                        if (eagle) "EAGLE3 head" else "Draft model",
+                        if (eagle) {
+                            "The EAGLE3 file trained for this exact model. A head made for a different model, even a fine-tune of the same one, won't help."
+                        } else {
+                            "The small model that makes the guesses. It is loaded alongside this one and uses extra memory."
+                        },
+                        options = listOf<String?>(null) + candidates.map { it.id },
                         selected = l.draftModelId,
                         default = null,
-                        label = { id -> id?.let { state.otherModels.firstOrNull { m -> m.id == it }?.displayName } ?: "None" },
+                        label = { id -> id?.let { candidates.firstOrNull { m -> m.id == it }?.displayName } ?: "None" },
                         onChange = { v -> set { copy(draftModelId = v) } },
                     )
                 }
@@ -542,10 +573,10 @@ private fun LoadingTab(
                 )
                 FloatSetting(
                     "Min confidence",
-                    "The draft model stops guessing when it's less sure than this. Higher gives fewer, better guesses.",
+                    "The guessing stops for this step once it's less sure than this. Higher gives fewer, better guesses.",
                     l.draftMinProbability, d.draftMinProbability, 0f..1f, 0.05f,
                     { v -> set { copy(draftMinProbability = v) } },
-                    enabled = l.speculative == "draft",
+                    enabled = l.speculative.startsWith("draft"),
                 )
             }
         }
