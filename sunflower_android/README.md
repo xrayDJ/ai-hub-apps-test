@@ -30,7 +30,7 @@ other; see `signing/README.md` for adding a private upload key for store release
 The GenieX SDK ships ~208 MB of native code, ~180 MB of which is Qualcomm's
 QNN/QAIRT runtime for AI Hub's precompiled models. Sunflower only runs GGUF
 through llama.cpp (whose NPU path is `ggml-hexagon`), so those libraries are
-excluded in `app/build.gradle.kts`. Fonts are subset to Latin.
+excluded in `app/build.gradle.kts`.
 
 ## Layout
 
