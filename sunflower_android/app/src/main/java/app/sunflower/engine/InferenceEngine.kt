@@ -66,6 +66,9 @@ class InferenceEngine(
     private val conversations: ConversationRepository,
     private val scope: CoroutineScope,
 ) {
+    /** This phone's chip and memory; decides what Auto tries. */
+    val device: DeviceProfile by lazy { DeviceProfile.detect(context) }
+
     sealed interface State {
         data object Idle : State
 
@@ -401,10 +404,10 @@ class InferenceEngine(
     ): List<Backend> {
         if (choice is BackendChoice.Only) return listOf(choice.backend)
         val crashed = model.failedSet()
-        val preferred = listOf(Backend.NPU, Backend.GPU, Backend.CPU).filterNot { it.computeUnit in crashed }
-        // Try what worked last time first.
-        val last = Backend.fromUnit(model.lastBackend)
-        val ordered = if (last != null && last in preferred) listOf(last) + (preferred - last) else preferred
+        val preferred = device.autoOrder.filterNot { it.computeUnit in crashed }
+        // Try what worked last time first, even a backend Auto wouldn't pick on this chip.
+        val last = Backend.fromUnit(model.lastBackend)?.takeIf { it.computeUnit !in crashed }
+        val ordered = if (last != null) listOf(last) + (preferred - last) else preferred
         return ordered.ifEmpty { listOf(Backend.CPU) }
     }
 

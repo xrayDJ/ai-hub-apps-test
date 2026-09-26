@@ -57,6 +57,7 @@ import app.sunflower.data.isMtpHead
 import app.sunflower.data.isSpeculativeHead
 import app.sunflower.engine.Backend
 import app.sunflower.engine.CrashReport
+import app.sunflower.engine.DeviceProfile
 import app.sunflower.engine.speculativeLabel
 import app.sunflower.ui.markdown.copyToClipboard
 import androidx.compose.foundation.horizontalScroll
@@ -122,6 +123,7 @@ fun ModelsScreen(
             .background(MaterialTheme.colorScheme.background),
     ) {
         ScreenHeader("Models", onBack)
+        state.device?.let { DeviceLine(it) }
 
         if (state.models.isEmpty()) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -132,6 +134,15 @@ fun ModelsScreen(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    if (!state.importing && state.device != null) {
+                        Text(
+                            "Models up to ${sizeHint(state.device, context)} suit this phone.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 32.dp),
+                        )
+                    }
                 }
             }
         } else {
@@ -144,6 +155,7 @@ fun ModelsScreen(
                     ModelCard(
                         model = model,
                         engine = state.engine,
+                        device = state.device,
                         copyProgress = state.copying[model.id],
                         expanded = expandedId == model.id,
                         onToggle = { expandedId = if (expandedId == model.id) null else model.id },
@@ -205,6 +217,7 @@ fun ModelsScreen(
 private fun ModelCard(
     model: ModelEntity,
     engine: InferenceEngine.State,
+    device: DeviceProfile?,
     copyProgress: Float?,
     expanded: Boolean,
     onToggle: () -> Unit,
@@ -333,6 +346,9 @@ private fun ModelCard(
                     Backend.entries.forEach { b ->
                         SunChip(b.label, backend == b.computeUnit, { onSetBackend(b.computeUnit) })
                     }
+                }
+                backendCaveat(backend, device)?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
                 }
                 val crashed = model.failedSet().mapNotNull { Backend.fromUnit(it)?.label }
                 if (crashed.isNotEmpty()) {
@@ -488,3 +504,72 @@ private fun backendSummary(
     Backend.fromUnit(backend)?.label
         ?: Backend.fromUnit(model.lastBackend)?.let { "Auto · last on ${it.label}" }
         ?: "Auto"
+
+/** The phone's chip, the backend Auto leans on, and its memory; details on request. */
+@Composable
+private fun DeviceLine(device: DeviceProfile) {
+    val context = LocalContext.current
+    val colors = MaterialTheme.colorScheme
+    var explain by remember { mutableStateOf(false) }
+    Column(Modifier.padding(horizontal = 20.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                listOfNotNull(device.chip, "${device.bestBackend.label} backend", ramLabel(device)).joinToString("  ·  "),
+                style = MaterialTheme.typography.labelMedium,
+                color = colors.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            InfoHintButton(explain, { explain = !explain })
+        }
+        InfoHintText(explain, deviceExplanation(device, context))
+    }
+}
+
+private fun ramLabel(device: DeviceProfile): String? =
+    device.totalRamBytes.takeIf { it > 0 }?.let { "${Math.ceil(it / 1_073_741_824.0).toInt()} GB memory" }
+
+private fun sizeHint(
+    device: DeviceProfile,
+    context: Context,
+): String = "about ${Formatter.formatShortFileSize(context, device.comfortableModelBytes)} (roughly ${device.comfortableParams}B parameters at 4-bit)"
+
+private fun deviceExplanation(
+    device: DeviceProfile,
+    context: Context,
+): String {
+    val where =
+        when (device.bestBackend) {
+            Backend.NPU -> "Models run on this phone's NPU, the fastest and most power-efficient option, with the GPU and CPU as fallbacks."
+            Backend.GPU ->
+                "The NPU backend isn't built for this chip, so models run on its Adreno GPU, with the CPU as a fallback. " +
+                    "You can still try the NPU from a model's options."
+            Backend.CPU ->
+                "This phone doesn't have a Snapdragon chip, so models run on the CPU. It works everywhere but is slower, " +
+                    "so smaller models give the best experience. You can still try the GPU from a model's options."
+        }
+    val size =
+        if (device.bestBackend == Backend.CPU) {
+            "Models up to ${sizeHint(device, context)} reply at a comfortable pace; bigger ones load but write slowly."
+        } else {
+            "Models up to ${sizeHint(device, context)} fit comfortably in memory next to Android and your other apps."
+        }
+    return "$where $size"
+}
+
+/** A note when the chosen backend isn't one this chip is known to run. */
+private fun backendCaveat(
+    backend: String,
+    device: DeviceProfile?,
+): String? {
+    if (device == null) return null
+    val chosen = Backend.fromUnit(backend)
+    return when {
+        chosen == Backend.NPU && !device.npu ->
+            "The NPU backend isn't built for this chip, so loading may fail. Auto uses the ${device.bestBackend.label} instead."
+        chosen == Backend.GPU && !device.qualcomm ->
+            "The GPU backend is made for Snapdragon's Adreno GPUs; on this phone it may be slow or fail to load."
+        else -> null
+    }
+}

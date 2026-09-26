@@ -46,6 +46,20 @@ answer the questionnaire for user-generated/AI-generated content accordingly.
 **Target audience:** 18+ is the safe choice for an app that runs arbitrary
 user-supplied models.
 
+## Device support
+
+Published to every arm64 phone on Android 12+; no chip filter in the device
+catalog. Sunflower reads the chip at runtime (`DeviceProfile`) and Auto picks:
+
+| Chip | Auto tries | Examples |
+|---|---|---|
+| Snapdragon 8 Gen 2, 8 Gen 3, 8 Elite, 8 Elite Gen 5 (HTP v73–v81) | NPU → GPU → CPU | Galaxy S23–S25, OnePlus 11–15, Xiaomi 13–17 |
+| Other Snapdragons | GPU (Adreno) → CPU | 8 Gen 1, 7-series phones |
+| Everything else | CPU | Pixel (Tensor), Exynos, Dimensity |
+
+A backend that worked before is tried first; any backend can still be picked by
+hand. The Models screen shows the chip, the backend and a comfortable model size.
+
 ## Store listing draft
 
 **Short description (80 chars):**
@@ -63,6 +77,9 @@ no account, no internet and no one else involved.
 • Speculative decoding, custom chat templates, saved system prompts.
 • Optional app lock and screenshot blocking.
 
+Fastest on phones with a Snapdragon 8 Gen 2 or newer, which run models on the
+NPU. Other phones run them on the GPU or CPU; smaller models work best there.
+
 ## Pre-release checklist
 
 - [ ] Fresh install → import → load on NPU/GPU/CPU → chat → background reply
@@ -70,3 +87,10 @@ no account, no internet and no one else involved.
 - [ ] App lock on/off, hide content on/off, theme switching
 - [ ] Delete all data restarts clean
 - [ ] Play build: no "Allow file access", Copy into app works
+- [ ] Play AI-generated content policy: in-app way to report offensive replies
+- [ ] Check the Models screen device line on a non-Snapdragon phone
+
+## Later
+
+- Curated models: a link to a Sunflower blog page listing recommended GGUFs with
+  their licenses (the app itself stays offline; downloads happen in the browser).

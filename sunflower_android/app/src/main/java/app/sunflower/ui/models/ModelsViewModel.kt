@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import app.sunflower.data.ModelLibrary
 import app.sunflower.data.db.ModelEntity
 import app.sunflower.engine.CrashReport
+import app.sunflower.engine.DeviceProfile
 import app.sunflower.engine.InferenceEngine
 import app.sunflower.engine.NotGgufException
 import kotlinx.coroutines.CancellationException
@@ -27,6 +28,7 @@ data class ModelsState(
     /** Copy progress (0..1) by model id. */
     val copying: Map<String, Float> = emptyMap(),
     val crashReports: Map<String, CrashReport> = emptyMap(),
+    val device: DeviceProfile? = null,
 )
 
 class ModelsViewModel(
@@ -47,7 +49,7 @@ class ModelsViewModel(
             importError,
             copying,
         ) { (models, engineState, crashes), isImporting, error, copies ->
-            ModelsState(models, engineState, isImporting, error, copies, crashes)
+            ModelsState(models, engineState, isImporting, error, copies, crashes, engine.device)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ModelsState())
 
     fun import(uri: Uri) {
