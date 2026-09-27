@@ -18,11 +18,16 @@ enum class LockAfter(val key: String, val label: String, val millis: Long) {
     FiveMinutes("300", "After 5 min", 300_000),
 }
 
+/** Message sizes offered in settings, in percent. */
+val CHAT_SCALES = listOf(85, 90, 100, 110, 120, 135, 150)
+
 data class AppPrefs(
     val theme: ThemeMode = ThemeMode.Dark,
     val appLock: Boolean = false,
     val lockAfter: LockAfter = LockAfter.Immediately,
     val hideContent: Boolean = false,
+    /** Size of chat messages, in percent of the normal size. */
+    val chatScale: Int = 100,
 )
 
 /**
@@ -42,6 +47,7 @@ class AppPreferences(context: Context) {
             .putBoolean("app_lock", next.appLock)
             .putString("lock_after", next.lockAfter.key)
             .putBoolean("hide_content", next.hideContent)
+            .putInt("chat_scale", next.chatScale)
             .apply()
         _state.value = next
     }
@@ -52,5 +58,6 @@ class AppPreferences(context: Context) {
             appLock = prefs.getBoolean("app_lock", false),
             lockAfter = LockAfter.entries.firstOrNull { it.key == prefs.getString("lock_after", null) } ?: LockAfter.Immediately,
             hideContent = prefs.getBoolean("hide_content", false),
+            chatScale = prefs.getInt("chat_scale", 100).coerceIn(CHAT_SCALES.first(), CHAT_SCALES.last()),
         )
 }

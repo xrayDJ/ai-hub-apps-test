@@ -1,5 +1,13 @@
 package app.sunflower.ui.settings
 
+import app.sunflower.ui.theme.lift
+import app.sunflower.ui.theme.SmoothCornerShape
+import app.sunflower.ui.theme.SunflowerTheme
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.foundation.layout.widthIn
+import app.sunflower.CHAT_SCALES
 import android.app.KeyguardManager
 import androidx.annotation.RawRes
 import androidx.compose.foundation.clickable
@@ -73,6 +81,16 @@ fun AppSettingsScreen(
                     default = ThemeMode.Dark,
                     label = { it.label },
                     onChange = { v -> onUpdate { it.copy(theme = v) } },
+                )
+                StepSetting(
+                    "Message size",
+                    "How large messages appear in chats, yours and the model's. The rest of the app keeps your phone's text size.",
+                    value = prefs.chatScale,
+                    default = 100,
+                    options = CHAT_SCALES,
+                    onChange = { v -> onUpdate { it.copy(chatScale = v) } },
+                    format = { "$it%" },
+                    footer = { preview -> MessagePreview(preview) },
                 )
             }
 
@@ -157,6 +175,41 @@ private fun DeleteAll(onDeleteAll: () -> Unit) {
         }
     }
 }
+
+/** A short exchange drawn at [percent] size, updating live as the slider moves. */
+@Composable
+private fun MessagePreview(percent: Int) {
+    val density = LocalDensity.current
+    val extras = SunflowerTheme.extras
+    val colors = MaterialTheme.colorScheme
+    CompositionLocalProvider(LocalDensity provides Density(density.density, density.fontScale * percent / 100f)) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp, bottom = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                "What grows well next to sunflowers?",
+                style = MaterialTheme.typography.bodyLarge,
+                color = extras.onBubble,
+                modifier =
+                    Modifier
+                        .align(Alignment.End)
+                        .widthIn(max = 280.dp)
+                        .lift(PreviewBubble, elevation = 0.dp, color = extras.bubble)
+                        .padding(horizontal = 16.dp, vertical = 11.dp),
+            )
+            Text(
+                "Squash, cucumbers and corn: they like the same sun, and cucumbers can climb the stalks.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = colors.onBackground,
+            )
+        }
+    }
+}
+
+private val PreviewBubble = SmoothCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomEnd = 7.dp, bottomStart = 20.dp)
 
 /** Open-source notices, folded until asked for. Each entry opens its full license text. */
 @Composable

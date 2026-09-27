@@ -1,5 +1,7 @@
 package app.sunflower.ui.chat
 
+import androidx.compose.ui.unit.Density
+import androidx.compose.runtime.CompositionLocalProvider
 import app.sunflower.ui.theme.rememberShimmer
 import app.sunflower.ui.theme.lift
 import app.sunflower.ui.theme.SunflowerTheme
@@ -138,6 +140,8 @@ fun ChatScreen(
     promptActions: PromptLibraryActions,
     /** Shared with this chat's row on the home screen, which grows into it. */
     boundsKey: String = "new",
+    /** Message text size relative to normal, from settings. */
+    messageScale: Float = 1f,
 ) {
     val colors = MaterialTheme.colorScheme
     val haptics = rememberHaptics()
@@ -264,84 +268,87 @@ fun ChatScreen(
                 if (itemCount == 0) {
                     EmptyChat(Modifier.align(Alignment.Center))
                 } else {
-                    LazyColumn(
-                        state = listState,
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(18.dp),
-                        modifier = Modifier.fillMaxSize(),
-                    ) {
-                        items(state.messages, key = { it.id }) { message ->
-                            val isLast = message.id == lastId
-                            val glow by animateColorAsState(
-                                if (highlightId == message.id) colors.primary.copy(alpha = 0.12f) else Color.Transparent,
-                                Motion.enter(),
-                                label = "focusGlow",
-                            )
-                            val glowModifier = Modifier.background(glow, RoundedCornerShape(18.dp))
-                            val toggle = { selectedId = if (selectedId == message.id) null else message.id }
-                            val copy = {
-                                copyToClipboard(context, message.content)
-                                haptics.tick()
-                                selectedId = null
+                    val density = LocalDensity.current
+                    CompositionLocalProvider(LocalDensity provides Density(density.density, density.fontScale * messageScale)) {
+                        LazyColumn(
+                            state = listState,
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(18.dp),
+                            modifier = Modifier.fillMaxSize(),
+                        ) {
+                            items(state.messages, key = { it.id }) { message ->
+                                val isLast = message.id == lastId
+                                val glow by animateColorAsState(
+                                    if (highlightId == message.id) colors.primary.copy(alpha = 0.12f) else Color.Transparent,
+                                    Motion.enter(),
+                                    label = "focusGlow",
+                                )
+                                val glowModifier = Modifier.background(glow, RoundedCornerShape(18.dp))
+                                val toggle = { selectedId = if (selectedId == message.id) null else message.id }
+                                val copy = {
+                                    copyToClipboard(context, message.content)
+                                    haptics.tick()
+                                    selectedId = null
+                                }
+                                if (message.role == ConversationRepository.ROLE_USER) {
+                                    val canEdit = message.id == lastUserId && state.canSend
+                                    UserMessage(
+                                        text = message.content,
+                                        rise = riseArmed && message.id == lastUserId && message.id != riseAfter,
+                                        showActions = selectedId == message.id,
+                                        onTap = toggle,
+                                        onCopy = copy,
+                                        onEdit =
+                                            if (canEdit) {
+                                                {
+                                                    editingId = message.id
+                                                    input = message.content
+                                                    selectedId = null
+                                                }
+                                            } else {
+                                                null
+                                            },
+                                        modifier = Modifier.messageAnimation(this).then(glowModifier),
+                                    )
+                                } else {
+                                    AssistantMessage(
+                                        content = message.content,
+                                        thinking = message.thinking,
+                                        thinkingOpen = false,
+                                        thinkingMs = message.thinkingMs,
+                                        working = false,
+                                        stats = statsLine(message),
+                                        // The latest reply keeps its actions in view; older ones show them on tap.
+                                        showActions = (isLast && !state.generating) || selectedId == message.id,
+                                        onTap = toggle,
+                                        onCopy = copy,
+                                        onRegenerate = if (isLast && state.canSend) onRegenerate else null,
+                                        versions = state.versions?.takeIf { isLast && !state.generating },
+                                        onVersion = flipVersion,
+                                        enterFrom = if (isLast) versionFlip else 0,
+                                        modifier = Modifier.messageAnimation(this).then(glowModifier),
+                                    )
+                                }
                             }
-                            if (message.role == ConversationRepository.ROLE_USER) {
-                                val canEdit = message.id == lastUserId && state.canSend
-                                UserMessage(
-                                    text = message.content,
-                                    rise = riseArmed && message.id == lastUserId && message.id != riseAfter,
-                                    showActions = selectedId == message.id,
-                                    onTap = toggle,
-                                    onCopy = copy,
-                                    onEdit =
-                                        if (canEdit) {
-                                            {
-                                                editingId = message.id
-                                                input = message.content
-                                                selectedId = null
-                                            }
-                                        } else {
-                                            null
-                                        },
-                                    modifier = Modifier.messageAnimation(this).then(glowModifier),
-                                )
-                            } else {
-                                AssistantMessage(
-                                    content = message.content,
-                                    thinking = message.thinking,
-                                    thinkingOpen = false,
-                                    thinkingMs = message.thinkingMs,
-                                    working = false,
-                                    stats = statsLine(message),
-                                    // The latest reply keeps its actions in view; older ones show them on tap.
-                                    showActions = (isLast && !state.generating) || selectedId == message.id,
-                                    onTap = toggle,
-                                    onCopy = copy,
-                                    onRegenerate = if (isLast && state.canSend) onRegenerate else null,
-                                    versions = state.versions?.takeIf { isLast && !state.generating },
-                                    onVersion = flipVersion,
-                                    enterFrom = if (isLast) versionFlip else 0,
-                                    modifier = Modifier.messageAnimation(this).then(glowModifier),
-                                )
-                            }
-                        }
-                        state.streaming?.takeIf { live -> state.messages.none { it.id == live.messageId } }?.let { live ->
-                            // Same key the saved message will use, so finishing a reply updates
-                            // this row in place instead of swapping one list item for another.
-                            item(key = live.messageId) {
-                                AssistantMessage(
-                                    content = live.content,
-                                    thinking = live.thinking,
-                                    thinkingOpen = live.thinkingOpen,
-                                    thinkingStartedAt = live.thinkingStartedAt,
-                                    thinkingMs = live.thinkingMs,
-                                    working = true,
-                                    stats = null,
-                                    showActions = false,
-                                    onTap = {},
-                                    onCopy = {},
-                                    onRegenerate = null,
-                                    modifier = Modifier.messageAnimation(this),
-                                )
+                            state.streaming?.takeIf { live -> state.messages.none { it.id == live.messageId } }?.let { live ->
+                                // Same key the saved message will use, so finishing a reply updates
+                                // this row in place instead of swapping one list item for another.
+                                item(key = live.messageId) {
+                                    AssistantMessage(
+                                        content = live.content,
+                                        thinking = live.thinking,
+                                        thinkingOpen = live.thinkingOpen,
+                                        thinkingStartedAt = live.thinkingStartedAt,
+                                        thinkingMs = live.thinkingMs,
+                                        working = true,
+                                        stats = null,
+                                        showActions = false,
+                                        onTap = {},
+                                        onCopy = {},
+                                        onRegenerate = null,
+                                        modifier = Modifier.messageAnimation(this),
+                                    )
+                                }
                             }
                         }
                     }

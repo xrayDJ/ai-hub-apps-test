@@ -1,5 +1,7 @@
 package app.sunflower.ui.home
 
+import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.layout.widthIn
 import android.text.format.DateUtils
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
@@ -232,17 +234,47 @@ fun HomeScreen(
             }
         }
 
-        SunButton(
-            text = "New chat",
-            icon = Icons.Filled.Add,
+        NewChatButton(
             onClick = onNewChat,
             modifier =
                 Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
-                    .padding(bottom = 22.dp)
-                    .chatBounds("new", PillShape),
+                    .padding(bottom = 22.dp),
         )
+    }
+}
+
+/** The main action. Its yellow surface is what grows into the new chat. */
+@Composable
+private fun NewChatButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = MaterialTheme.colorScheme
+    val source = remember { MutableInteractionSource() }
+    val haptics = rememberHaptics()
+    Box(modifier.pressScale(source)) {
+        Box(
+            Modifier
+                .matchParentSize()
+                .chatBounds("new", PillShape)
+                .shadow(14.dp, PillShape, ambientColor = colors.primary, spotColor = colors.primary)
+                .background(colors.primary, PillShape),
+        )
+        Row(
+            Modifier
+                .clip(PillShape)
+                .clickable(interactionSource = source, indication = null, role = Role.Button) {
+                    haptics.tick()
+                    onClick()
+                }.padding(start = 20.dp, end = 24.dp, top = 15.dp, bottom = 15.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Filled.Add, contentDescription = null, tint = colors.onPrimary, modifier = Modifier.size(20.dp))
+            Text("New chat", style = MaterialTheme.typography.labelLarge, color = colors.onPrimary)
+        }
     }
 }
 
@@ -334,17 +366,17 @@ private fun StatusLine(
                             color = colors.onSurface,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false).drawnUnderline(colors.primary),
+                            modifier = Modifier.widthIn(max = NAME_MAX).drawnUnderline(colors.primary),
                         )
                         Text("  ·  ${current.backend}", style = style, color = colors.onSurfaceVariant, maxLines = 1)
                     }
-                is ModelStatus.Loading ->
-                    Text(
-                        "Loading ${current.name} on ${current.backend}…",
-                        style = style.copy(brush = rememberShimmer(colors.onSurfaceVariant, colors.onSurface)),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                is ModelStatus.Loading -> {
+                    val shimmer = style.copy(brush = rememberShimmer(colors.onSurfaceVariant, colors.onSurface))
+                    Row {
+                        Text(current.name, style = shimmer, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = NAME_MAX))
+                        Text("  ·  loading on ${current.backend}…", style = shimmer, maxLines = 1)
+                    }
+                }
                 ModelStatus.Starting ->
                     Text("Starting…", style = style.copy(brush = rememberShimmer(colors.onSurfaceVariant, colors.onSurface)))
                 is ModelStatus.Failed ->
@@ -355,7 +387,7 @@ private fun StatusLine(
                             color = colors.error,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false),
+                            modifier = Modifier.widthIn(max = NAME_MAX + 60.dp),
                         )
                         Text("  ·  Details", style = style, color = colors.onSurface, maxLines = 1)
                     }
@@ -422,55 +454,67 @@ private fun ConversationRow(
     val raise by animateFloatAsState(if (lifted) 1f else 0f, Motion.lively(), label = "rowRaise")
     val elevation by animateDpAsState(if (lifted) 22.dp else 10.dp, Motion.lively(), label = "rowElevation")
     Column(modifier.fillMaxWidth()) {
-        Row(
+        Box(
             Modifier
                 .fillMaxWidth()
-                .chatBounds(conversation.id, CardShape)
                 .graphicsLayer {
                     scaleX = scale
                     scaleY = scale
                     translationY = -3.dp.toPx() * raise
-                }.lift(CardShape, elevation = elevation)
-                .combinedClickable(
-                    interactionSource = source,
-                    indication = null,
-                    onClick = onClick,
-                    onLongClickLabel = "Chat options",
-                    onLongClick = {
-                        haptics.confirm()
-                        onLongClick()
-                    },
-                ).heightIn(min = 68.dp)
-                .padding(horizontal = 18.dp, vertical = 13.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                },
         ) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    AnimatedVisibility(
-                        visible = conversation.pinned,
-                        enter = fadeIn(Motion.enter()) + expandHorizontallyFromStart(),
-                        exit = fadeOut(Motion.exit()) + shrinkHorizontallyToStart(),
-                    ) {
-                        PetalGlyph(Modifier.padding(end = 7.dp))
+            // Only the surface grows into the chat; the text stays behind and fades with the list.
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .chatBounds(conversation.id, CardShape)
+                    .lift(CardShape, elevation = elevation),
+            )
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(CardShape)
+                    .combinedClickable(
+                        interactionSource = source,
+                        indication = null,
+                        onClick = onClick,
+                        onLongClickLabel = "Chat options",
+                        onLongClick = {
+                            haptics.confirm()
+                            onLongClick()
+                        },
+                    ).heightIn(min = 68.dp)
+                    .padding(horizontal = 18.dp, vertical = 13.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        AnimatedVisibility(
+                            visible = conversation.pinned,
+                            enter = fadeIn(Motion.enter()) + expandHorizontallyFromStart(),
+                            exit = fadeOut(Motion.exit()) + shrinkHorizontallyToStart(),
+                        ) {
+                            PetalGlyph(Modifier.padding(end = 7.dp))
+                        }
+                        Text(
+                            conversation.title,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = colors.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     }
                     Text(
-                        conversation.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = colors.onSurface,
+                        conversation.modelName ?: "No model yet",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.onSurfaceVariant,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                        overflow = TextOverflow.MiddleEllipsis,
                     )
                 }
-                Text(
-                    conversation.modelName ?: "No model yet",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.MiddleEllipsis,
-                )
+                Spacer(Modifier.width(12.dp))
+                Text(relativeTime(conversation.updatedAt), style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
             }
-            Spacer(Modifier.width(12.dp))
-            Text(relativeTime(conversation.updatedAt), style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
         }
 
         AnimatedVisibility(
@@ -614,43 +658,49 @@ private fun SearchResultRow(
 ) {
     val colors = MaterialTheme.colorScheme
     val source = remember { MutableInteractionSource() }
-    Column(
-        modifier
-            .fillMaxWidth()
-            .chatBounds(hit.conversation.id, CardShape)
-            .pressScale(source, 0.975f)
-            .lift(CardShape)
-            .clickable(interactionSource = source, indication = null, onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 12.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                hit.conversation.title,
-                style = MaterialTheme.typography.titleMedium,
-                color = colors.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            Spacer(Modifier.width(12.dp))
-            Text(relativeTime(hit.conversation.updatedAt), style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
-        }
-        hit.snippet?.let { snippet ->
-            val highlighted =
-                remember(snippet, colors.primary) {
-                    buildAnnotatedString {
-                        append(snippet.text)
-                        addStyle(SpanStyle(color = colors.primary, fontWeight = FontWeight.SemiBold), snippet.matchStart, snippet.matchEnd)
+    Box(modifier.fillMaxWidth().pressScale(source, 0.975f)) {
+        Box(
+            Modifier
+                .matchParentSize()
+                .chatBounds(hit.conversation.id, CardShape)
+                .lift(CardShape),
+        )
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .clip(CardShape)
+                .clickable(interactionSource = source, indication = null, onClick = onClick)
+                .padding(horizontal = 18.dp, vertical = 12.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    hit.conversation.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = colors.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.width(12.dp))
+                Text(relativeTime(hit.conversation.updatedAt), style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
+            }
+            hit.snippet?.let { snippet ->
+                val highlighted =
+                    remember(snippet, colors.primary) {
+                        buildAnnotatedString {
+                            append(snippet.text)
+                            addStyle(SpanStyle(color = colors.primary, fontWeight = FontWeight.SemiBold), snippet.matchStart, snippet.matchEnd)
+                        }
                     }
-                }
-            Text(
-                highlighted,
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 2.dp),
-            )
+                Text(
+                    highlighted,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
         }
     }
 }
@@ -693,3 +743,6 @@ private fun StorageRecovery(
         }
     }
 }
+
+/** Long model names stop here so the backend stays next to them. */
+private val NAME_MAX = 170.dp

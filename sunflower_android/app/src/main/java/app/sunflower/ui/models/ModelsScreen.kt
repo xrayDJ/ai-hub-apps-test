@@ -1,5 +1,12 @@
 package app.sunflower.ui.models
 
+import app.sunflower.ui.theme.SmoothCornerShape
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.ui.draw.rotate
+import androidx.compose.material3.Icon
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.ui.graphics.Color
 import app.sunflower.ui.theme.lift
 import app.sunflower.ui.theme.CardShape
@@ -126,27 +133,25 @@ fun ModelsScreen(
             .background(MaterialTheme.colorScheme.background),
     ) {
         ScreenHeader("Models", onBack)
-        state.device?.let { DeviceLine(it) }
 
         if (state.models.isEmpty()) {
-            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    SunflowerMark(size = 72.dp, spinning = state.importing)
-                    Text(
-                        if (state.importing) "Reading model…" else "No models yet",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    if (!state.importing && state.device != null) {
-                        Text(
-                            "Models up to ${sizeHint(state.device, context)} suit this phone.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = 32.dp),
-                        )
-                    }
-                }
+            Column(
+                Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                state.device?.let { DeviceCard(it) }
+                Spacer(Modifier.height(56.dp))
+                SunflowerMark(size = 72.dp, spinning = state.importing)
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    if (state.importing) "Reading model…" else "No models yet",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         } else {
             LazyColumn(
@@ -154,6 +159,7 @@ fun ModelsScreen(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                state.device?.let { device -> item(key = "device") { DeviceCard(device, Modifier.padding(bottom = 6.dp)) } }
                 items(state.models, key = { it.id }) { model ->
                     ModelCard(
                         model = model,
@@ -264,11 +270,7 @@ private fun ModelCard(
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
-        Text(
-            describe(model, context),
-            style = CodeStyle.copy(fontSize = MaterialTheme.typography.labelSmall.fontSize),
-            color = colors.onSurfaceVariant,
-        )
+        ModelSpecs(model, device)
 
         if (crashReport != null) CrashNotice(crashReport, onDismissCrash)
 
@@ -480,24 +482,6 @@ private fun StatusRow(
     }
 }
 
-private fun describe(
-    model: ModelEntity,
-    context: android.content.Context,
-): String =
-    listOfNotNull(
-        model.architecture,
-        model.sizeLabel,
-        model.quantization,
-        model.sizeBytes.takeIf { it > 0 }?.let { Formatter.formatShortFileSize(context, it) },
-        model.contextLength?.let { "${it / 1024}k ctx" },
-        when {
-            model.isMtpHead -> "MTP head"
-            model.architecture == EAGLE3_ARCH -> "EAGLE3 head"
-            (model.nextnLayers ?: 0) > 0 -> "MTP"
-            else -> null
-        },
-    ).joinToString("  ·  ")
-
 private fun backendSummary(
     backend: String,
     model: ModelEntity,
@@ -506,30 +490,138 @@ private fun backendSummary(
         ?: Backend.fromUnit(model.lastBackend)?.let { "Auto · last on ${it.label}" }
         ?: "Auto"
 
-/** The phone's chip, the backend Auto leans on, and its memory; details on request. */
+/**
+ * What this phone offers: its chip, where models run, its memory and the
+ * model size that fits comfortably, with the reasoning a tap away.
+ */
 @Composable
-private fun DeviceLine(device: DeviceProfile) {
+private fun DeviceCard(
+    device: DeviceProfile,
+    modifier: Modifier = Modifier,
+) {
     val context = LocalContext.current
     val colors = MaterialTheme.colorScheme
-    var explain by remember { mutableStateOf(false) }
-    Column(Modifier.padding(horizontal = 20.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                listOfNotNull(device.chip, "${device.bestBackend.label} backend", ramLabel(device)).joinToString("  ·  "),
-                style = MaterialTheme.typography.labelMedium,
-                color = colors.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false),
-            )
-            InfoHintButton(explain, { explain = !explain })
+    var explain by rememberSaveable { mutableStateOf(true) }
+    val rotation by animateFloatAsState(if (explain) 180f else 0f, Motion.lively(), label = "deviceChevron")
+    Column(
+        modifier
+            .fillMaxWidth()
+            .lift(CardShape)
+            .animateContentSize(Motion.soft())
+            .padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(CardShape)
+                .clickable(onClickLabel = if (explain) "Hide explanation" else "Explain") { explain = !explain },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("This phone", style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
+                Text(device.chip ?: "Unrecognised chip", style = MaterialTheme.typography.titleMedium, color = colors.onSurface)
+            }
+            Icon(SunIcons.ChevronDown, contentDescription = null, tint = colors.onSurfaceVariant, modifier = Modifier.size(20.dp).rotate(rotation))
         }
-        InfoHintText(explain, deviceExplanation(device, context))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Fact("Runs on", device.bestBackend.label, Modifier.weight(1f))
+            Fact("Memory", ramLabel(device) ?: "Unknown", Modifier.weight(1f))
+            Fact("Fits well up to", Formatter.formatShortFileSize(context, device.comfortableModelBytes), Modifier.weight(1f))
+        }
+        if (explain) {
+            Text(deviceExplanation(device, context), style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
+        }
     }
 }
 
+/** One figure about the phone: the value large, what it means small underneath. */
+@Composable
+private fun Fact(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+) {
+    val colors = MaterialTheme.colorScheme
+    Column(
+        modifier
+            .clip(SmallShape)
+            .background(colors.onSurface.copy(alpha = 0.05f))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(value, style = MaterialTheme.typography.titleMedium, color = colors.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
+    }
+}
+
+/** A model's key figures as small labelled tiles instead of a line of abbreviations. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ModelSpecs(
+    model: ModelEntity,
+    device: DeviceProfile?,
+) {
+    val context = LocalContext.current
+    val colors = MaterialTheme.colorScheme
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        model.sizeLabel?.let { Spec(it, "parameters") }
+        model.quantization?.let { quant ->
+            val bits = quantBits(quant)
+            if (bits != null) Spec("$bits-bit", quant) else Spec(quant, "quantization")
+        }
+        if (model.sizeBytes > 0) Spec(Formatter.formatShortFileSize(context, model.sizeBytes), "file size")
+        model.contextLength?.let { Spec(contextLabel(it), "context") }
+        when {
+            model.isMtpHead -> Spec("MTP head", "helper file")
+            model.architecture == EAGLE3_ARCH -> Spec("EAGLE3 head", "helper file")
+            (model.nextnLayers ?: 0) > 0 -> Spec("MTP", "built-in drafting")
+        }
+        if (device != null && model.sizeBytes > 0 && !model.isSpeculativeHead) {
+            when {
+                model.sizeBytes <= device.comfortableModelBytes -> Spec("Fits well", "on this phone", colors.tertiary)
+                model.sizeBytes <= device.totalRamBytes * 0.6 -> Spec("Tight fit", "on this phone", colors.primary)
+                else -> Spec("Very large", "for this phone", colors.error)
+            }
+        }
+        model.architecture?.let { Spec(it, "architecture") }
+    }
+}
+
+@Composable
+private fun Spec(
+    value: String,
+    label: String,
+    accent: Color = MaterialTheme.colorScheme.onSurface,
+) {
+    val colors = MaterialTheme.colorScheme
+    Column(
+        Modifier
+            .clip(SmallShape)
+            .background(colors.onSurface.copy(alpha = 0.05f))
+            .padding(horizontal = 12.dp, vertical = 7.dp),
+    ) {
+        Text(value, style = MaterialTheme.typography.labelLarge, color = accent, maxLines = 1)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant, maxLines = 1)
+    }
+}
+
+/** Bits per weight from a quantization name: Q4_K_M, IQ2_XXS, Q8_0, BF16, MXFP4. */
+internal fun quantBits(quant: String): Int? {
+    val q = quant.uppercase()
+    Regex("^[A-Z]*?Q(\\d)").find(q)?.let { return it.groupValues[1].toInt() }
+    Regex("^B?F(16|32)$").find(q)?.let { return it.groupValues[1].toInt() }
+    Regex("FP(\\d+)").find(q)?.let { return it.groupValues[1].toInt() }
+    return null
+}
+
+/** Context length the way people say it: 32k, 128k. */
+internal fun contextLabel(tokens: Int): String = if (tokens >= 1024) "${tokens / 1024}k" else tokens.toString()
+
+private val SmallShape = SmoothCornerShape(12.dp)
+
 private fun ramLabel(device: DeviceProfile): String? =
-    device.totalRamBytes.takeIf { it > 0 }?.let { "${Math.ceil(it / 1_073_741_824.0).toInt()} GB memory" }
+    device.totalRamBytes.takeIf { it > 0 }?.let { "${Math.ceil(it / 1_073_741_824.0).toInt()} GB" }
 
 private fun sizeHint(
     device: DeviceProfile,

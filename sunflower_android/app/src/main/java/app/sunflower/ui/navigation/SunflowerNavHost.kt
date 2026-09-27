@@ -10,8 +10,6 @@ import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -107,13 +105,13 @@ fun SunflowerNavHost(
                 },
                 exitTransition = {
                     when {
-                        homeAndChat() -> scaleOut(Motion.soft(), targetScale = 0.94f) + fadeOut(tween(360))
+                        homeAndChat() -> fadeOut(tween(durationMillis = 260, delayMillis = 40))
                         else -> slideOutOfContainer(SlideDirection.Start, Motion.slide) { it / 10 } + fadeOut(Motion.exit())
                     }
                 },
                 popEnterTransition = {
                     when {
-                        homeAndChat() -> scaleIn(Motion.soft(), initialScale = 0.94f) + fadeIn(tween(360))
+                        homeAndChat() -> fadeIn(tween(durationMillis = 300, delayMillis = 60))
                         else -> slideIntoContainer(SlideDirection.End, Motion.slide) { it / 10 } + fadeIn(Motion.enter())
                     }
                 },
@@ -173,6 +171,7 @@ fun SunflowerNavHost(
                 }
                 composable<ChatRoute> { entry -> Screen {
                     val route = entry.toRoute<ChatRoute>()
+                    val prefs by container.preferences.state.collectAsStateWithLifecycle()
                     val vm = viewModel { ChatViewModel(route.conversationId, container.conversations, container.engine, container.prompts, container.models) }
                     val state by vm.state.collectAsStateWithLifecycle()
                     ChatScreen(
@@ -195,6 +194,7 @@ fun SunflowerNavHost(
                         promptActions = vm.promptActions,
                         // A chat started from "New chat" shrinks back into its new row once saved.
                         boundsKey = vm.savedConversationId ?: route.conversationId ?: "new",
+                        messageScale = prefs.chatScale / 100f,
                     )
                 } }
                 composable<ModelSettingsRoute> { entry ->
