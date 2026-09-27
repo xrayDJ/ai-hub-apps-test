@@ -1,8 +1,5 @@
 package app.sunflower.ui.settings
 
-import androidx.compose.ui.graphics.Color
-import app.sunflower.ui.theme.lift
-import app.sunflower.ui.theme.CardShape
 import android.text.format.Formatter
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -154,12 +151,10 @@ private fun RepliesTab(
     fun set(transform: Sampling.() -> Sampling) = onUpdate { it.copy(sampling = it.sampling.transform()) }
     val recommended = state.info?.recommendedSampling
 
-    Text(
-        summary(s),
-        style = CodeStyle,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(top = 12.dp, start = 4.dp),
-    )
+    Column(Modifier.padding(top = 14.dp, start = 4.dp, end = 4.dp, bottom = 4.dp)) {
+        Text(character(s, recommended), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+        Text(describe(s), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
 
     SettingSection("Presets") {
         FlowRow(
@@ -280,18 +275,37 @@ private fun RepliesTab(
     }
 }
 
-private fun summary(s: Sampling): String =
-    buildList {
-        add("temp ${"%.2f".fmt(s.temperature)}")
-        add("top-p ${"%.2f".fmt(s.topP)}")
-        add("top-k ${if (s.topK == 0) "off" else s.topK}")
-        add("min-p ${"%.2f".fmt(s.minP)}")
-        add("repeat ${"%.2f".fmt(s.repetitionPenalty)}")
-        add("≤ ${s.maxTokens} tokens")
-        add("seed ${if (s.seed < 0) "random" else s.seed}")
-    }.joinToString(" · ")
+/** The name of the current setup: a preset it matches, the model's own values, or Custom. */
+private fun character(
+    s: Sampling,
+    recommended: Sampling?,
+): String =
+    when {
+        recommended != null && s.sameSamplerAs(recommended) -> "Model's own"
+        else -> SamplingPreset.entries.firstOrNull { s.sameSamplerAs(it.sampling) }?.label ?: "Custom"
+    }
 
-private fun String.fmt(v: Float) = String.format(Locale.US, this, v)
+/** What the current values mean for replies, in a sentence or two instead of a row of numbers. */
+private fun describe(s: Sampling): String {
+    val wording =
+        when {
+            s.temperature <= 0.01f -> "Always picks the most likely word"
+            s.temperature < 0.45f -> "Sticks closely to likely words"
+            s.temperature < 0.9f -> "Balances reliable and varied wording"
+            s.temperature < 1.3f -> "Takes creative liberties with wording"
+            else -> "Writes very freely, with more mistakes"
+        }
+    val repeats =
+        when {
+            s.repetitionPenalty <= 1.001f && s.presencePenalty <= 0f && s.frequencyPenalty <= 0f -> "leaves repetition alone"
+            s.repetitionPenalty <= 1.12f && s.presencePenalty < 0.5f && s.frequencyPenalty < 0.5f -> "gently discourages repeats"
+            else -> "works hard to avoid repeating itself"
+        }
+    val words = String.format(Locale.US, "%,d", s.maxTokens * 3 / 4)
+    val takes = if (s.seed < 0) "a fresh take each time" else "the same reply to the same message"
+    val grammar = if (s.grammar.isNotBlank()) " Replies follow your grammar." else ""
+    return "$wording and $repeats. Up to about $words words per reply, $takes.$grammar"
+}
 
 // ----------------------------------------------------------- Conversation
 
@@ -629,9 +643,7 @@ private fun LoadStatusCard(
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(top = 12.dp)
-            .lift(CardShape, ring = if (loaded != null) colors.primary.copy(alpha = 0.75f) else Color.Unspecified)
-            .padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
+            .padding(start = 4.dp, top = 14.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
@@ -641,17 +653,25 @@ private fun LoadStatusCard(
                     loaded != null -> "Running on ${loaded.backend.label}"
                     else -> "Not loaded"
                 },
-                style = MaterialTheme.typography.titleSmall,
-                color = colors.onSurface,
+                style = MaterialTheme.typography.titleMedium,
+                color = if (loaded != null) colors.onSurface else colors.onSurfaceVariant,
             )
             Text(
                 if (loaded != null) {
                     val a = loaded.applied
-                    "${a.contextSize} context · ${if (a.gpuLayers >= ALL_LAYERS) "all" else a.gpuLayers} layers offloaded · ${a.threads} threads"
+                    val tokens = String.format(Locale.US, "%,d", a.contextSize)
+                    val placement =
+                        when {
+                            loaded.backend == Backend.CPU -> "runs entirely on the CPU with ${a.threads} threads"
+                            a.gpuLayers >= ALL_LAYERS -> "the whole model sits on the ${loaded.backend.label}"
+                            a.gpuLayers <= 0 -> "the model runs on the CPU with ${a.threads} threads"
+                            else -> "${a.gpuLayers} layers sit on the ${loaded.backend.label}, the rest on the CPU"
+                        }
+                    "Room for $tokens tokens of conversation; $placement."
                 } else {
                     "Changes here apply when you load it."
                 },
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
                 color = colors.onSurfaceVariant,
             )
         }
@@ -699,15 +719,12 @@ private fun PendingBar(
 
 @Composable
 private fun InfoCard(text: String) {
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .padding(top = 12.dp)
-            .lift(CardShape, elevation = 0.dp)
-            .padding(16.dp),
-    ) {
-        Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
+    Text(
+        text,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 14.dp, bottom = 4.dp),
+    )
 }
 
 /** Common chat formats, for models that ship without a usable template. */

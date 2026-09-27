@@ -90,7 +90,7 @@ fun SettingSection(
         Column(
             Modifier
                 .fillMaxWidth()
-                .lift(CardShape)
+                .lift(CardShape, elevation = 0.dp)
                 .padding(horizontal = 16.dp, vertical = 4.dp),
         ) { content() }
     }

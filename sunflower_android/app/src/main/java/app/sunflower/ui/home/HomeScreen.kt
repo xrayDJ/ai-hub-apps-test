@@ -90,7 +90,6 @@ import app.sunflower.ui.components.SunButtonStyle
 import app.sunflower.ui.components.SunIconButton
 import app.sunflower.ui.components.SunIcons
 import app.sunflower.ui.components.SunflowerMark
-import app.sunflower.ui.components.chatBounds
 import app.sunflower.ui.components.pressScale
 import app.sunflower.ui.components.rememberHaptics
 import app.sunflower.ui.theme.CardShape
@@ -245,7 +244,7 @@ fun HomeScreen(
     }
 }
 
-/** The main action. Its yellow surface is what grows into the new chat. */
+/** The main action, glowing faintly in its own colour. */
 @Composable
 private fun NewChatButton(
     onClick: () -> Unit,
@@ -258,7 +257,6 @@ private fun NewChatButton(
         Box(
             Modifier
                 .matchParentSize()
-                .chatBounds("new", PillShape)
                 .shadow(14.dp, PillShape, ambientColor = colors.primary, spotColor = colors.primary)
                 .background(colors.primary, PillShape),
         )
@@ -422,7 +420,7 @@ enum class RowMode { Plain, Actions, Renaming, ConfirmDelete }
 
 /**
  * A chat in the list. A press sinks it slightly; a long press lifts it off the
- * page and unfolds its actions underneath. Tapping grows it into the chat.
+ * page and unfolds its actions underneath.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -463,11 +461,9 @@ private fun ConversationRow(
                     translationY = -3.dp.toPx() * raise
                 },
         ) {
-            // Only the surface grows into the chat; the text stays behind and fades with the list.
             Box(
                 Modifier
                     .matchParentSize()
-                    .chatBounds(conversation.id, CardShape)
                     .lift(CardShape, elevation = elevation),
             )
             Row(
@@ -662,7 +658,6 @@ private fun SearchResultRow(
         Box(
             Modifier
                 .matchParentSize()
-                .chatBounds(hit.conversation.id, CardShape)
                 .lift(CardShape),
         )
         Column(

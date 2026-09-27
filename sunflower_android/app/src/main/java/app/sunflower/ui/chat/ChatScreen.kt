@@ -7,7 +7,6 @@ import app.sunflower.ui.theme.lift
 import app.sunflower.ui.theme.SunflowerTheme
 import app.sunflower.ui.theme.SmoothCornerShape
 import app.sunflower.ui.theme.CardShape
-import app.sunflower.ui.components.chatBounds
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.graphicsLayer
@@ -138,8 +137,6 @@ fun ChatScreen(
     onOpenModels: () -> Unit,
     onOpenSettings: (modelId: String) -> Unit,
     promptActions: PromptLibraryActions,
-    /** Shared with this chat's row on the home screen, which grows into it. */
-    boundsKey: String = "new",
     /** Message text size relative to normal, from settings. */
     messageScale: Float = 1f,
 ) {
@@ -224,7 +221,6 @@ fun ChatScreen(
     Box(
         Modifier
             .fillMaxSize()
-            .chatBounds(boundsKey, CardShape)
             .background(colors.background),
     ) {
         Column(Modifier.fillMaxSize().imePadding()) {
