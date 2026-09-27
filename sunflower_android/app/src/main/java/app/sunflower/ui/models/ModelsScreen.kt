@@ -1,5 +1,6 @@
 package app.sunflower.ui.models
 
+import kotlin.math.roundToInt
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.buildAnnotatedString
@@ -492,23 +493,37 @@ private fun backendSummary(
         ?: "Auto"
 
 /**
- * One quiet line about this phone: its chip and where models run. The info
- * button opens a short paragraph on what that means for running AI locally.
+ * This phone: its chip, then one plain sentence with the figures picked out.
+ * The info button opens a short paragraph on what that means for local AI.
  */
 @Composable
 private fun DeviceSummary(device: DeviceProfile) {
     val colors = MaterialTheme.colorScheme
     var explain by rememberSaveable { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, bottom = 8.dp)) {
+    val strong = SpanStyle(color = colors.onSurface, fontWeight = FontWeight.Medium)
+    val summary =
+        buildAnnotatedString {
+            append("Runs models on the ")
+            withStyle(strong) { append(device.bestBackend.label) }
+            ramLabel(device)?.let {
+                append(", with ")
+                withStyle(strong) { append(it) }
+                append(" of memory")
+            }
+            append(".")
+        }
+    Column(Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 4.dp, bottom = 14.dp)) {
+        Text("This phone", style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                "${device.chip ?: "This phone"}  ·  runs on the ${device.bestBackend.label}",
-                style = MaterialTheme.typography.labelMedium,
-                color = colors.onSurfaceVariant,
+                device.chip ?: "Unrecognised chip",
+                style = MaterialTheme.typography.titleMedium,
+                color = colors.onSurface,
                 modifier = Modifier.weight(1f, fill = false),
             )
             InfoHintButton(explain, { explain = !explain })
         }
+        Text(summary, style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
         AnimatedVisibility(
             visible = explain,
             enter = fadeIn(Motion.enter()) + expandVertically(Motion.enter()),
@@ -518,7 +533,7 @@ private fun DeviceSummary(device: DeviceProfile) {
                 deviceReasoning(device),
                 style = MaterialTheme.typography.bodyMedium,
                 color = colors.onSurfaceVariant,
-                modifier = Modifier.padding(top = 2.dp, bottom = 6.dp),
+                modifier = Modifier.padding(top = 10.dp),
             )
         }
     }
@@ -526,7 +541,8 @@ private fun DeviceSummary(device: DeviceProfile) {
 
 /**
  * A model's figures as one readable line: the values stand out, the words
- * around them say what they are, and a closing note says how it fits this phone.
+ * around them say what they are, and the last part says how much of this
+ * phone's memory the file takes.
  */
 @Composable
 private fun ModelSpecs(
@@ -558,14 +574,11 @@ private fun ModelSpecs(
                 model.architecture == EAGLE3_ARCH -> parts += { append("EAGLE3 head") }
                 (model.nextnLayers ?: 0) > 0 -> parts += { append("built-in MTP") }
             }
-            if (device != null && model.sizeBytes > 0 && !model.isSpeculativeHead) {
-                val (text, color) =
-                    when {
-                        model.sizeBytes <= device.comfortableModelBytes -> "fits well" to colors.tertiary
-                        model.sizeBytes <= device.totalRamBytes * 0.6 -> "tight fit" to colors.primary
-                        else -> "very large for this phone" to colors.error
-                    }
-                parts += { withStyle(SpanStyle(color = color)) { append(text) } }
+            if (device != null && device.totalRamBytes > 0 && model.sizeBytes > 0 && !model.isSpeculativeHead) {
+                // A plain share of memory; it only takes on colour when it's likely too much.
+                val share = model.sizeBytes.toDouble() / device.totalRamBytes
+                val text = "about ${(share * 100).roundToInt().coerceAtLeast(1)}% of memory"
+                parts += { if (share > 0.6) withStyle(SpanStyle(color = colors.error)) { append(text) } else append(text) }
             }
             parts.forEachIndexed { index, part ->
                 if (index > 0) append("  ·  ")
@@ -605,9 +618,9 @@ private fun deviceReasoning(device: DeviceProfile): String {
         }
     val limit =
         if (device.bestBackend == Backend.CPU) {
-            "Small models give the best experience here, up to about ${device.comfortableParams}B parameters."
+            "Smaller models, up to about ${device.comfortableParams}B parameters, run best here."
         } else {
-            "Smaller models reply faster and leave room for longer chats; around ${device.comfortableParams}B parameters at 4-bit is a comfortable ceiling."
+            "Smaller models reply faster and leave room for longer chats; up to about ${device.comfortableParams}B parameters at 4-bit run well here."
         }
     return "$hardware Everything happens on the phone, so nothing you write leaves it and it works offline. $limit"
 }
