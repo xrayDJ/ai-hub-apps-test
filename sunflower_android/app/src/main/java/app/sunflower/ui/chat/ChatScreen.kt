@@ -1,5 +1,6 @@
 package app.sunflower.ui.chat
 
+import androidx.compose.animation.animateColorAsState
 import android.Manifest
 import kotlinx.coroutines.delay
 import androidx.compose.runtime.mutableLongStateOf
@@ -75,6 +76,7 @@ import androidx.compose.ui.unit.dp
 import app.sunflower.data.ConversationRepository
 import app.sunflower.data.db.ModelEntity
 import app.sunflower.data.displayName
+import app.sunflower.ui.components.RenameField
 import app.sunflower.engine.Reasoning
 import app.sunflower.data.db.MessageEntity
 import app.sunflower.ui.components.InfoHintButton
@@ -107,6 +109,8 @@ fun ChatScreen(
     onLoadChatModel: () -> Unit,
     onKeepCurrentModel: () -> Unit,
     onToggleThinking: () -> Unit,
+    onRename: (String) -> Unit,
+    focusMessageId: String?,
     onSystemPromptChange: (String) -> Unit,
     onBack: () -> Unit,
     onOpenModels: () -> Unit,
@@ -119,6 +123,10 @@ fun ChatScreen(
     var editingPrompt by rememberSaveable { mutableStateOf(false) }
     var editingId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
+    var renaming by rememberSaveable { mutableStateOf(false) }
+    // A message opened from search is brought into view once, instead of the end of the chat.
+    var pendingFocus by rememberSaveable { mutableStateOf(focusMessageId) }
+    var highlightId by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     // Asked once, on the first message: lets the "writing a reply" notification show while in the background.
@@ -145,7 +153,18 @@ fun ChatScreen(
             .collect { (scrolling, canScrollForward) -> if (scrolling) following = !canScrollForward }
     }
     LaunchedEffect(itemCount) {
-        if (itemCount > 0) {
+        val focus = pendingFocus
+        val focusIndex = focus?.let { id -> state.messages.indexOfFirst { it.id == id } } ?: -1
+        if (focusIndex >= 0) {
+            pendingFocus = null
+            following = false
+            listState.scrollToItem(focusIndex)
+            highlightId = focus
+            delay(1_600)
+            highlightId = null
+        } else if (itemCount > 0) {
+            pendingFocus = null
+            highlightId = null
             following = true
             listState.animateScrollToItem(itemCount - 1)
         }
@@ -164,6 +183,7 @@ fun ChatScreen(
                 title = state.title,
                 onBack = onBack,
                 subtitle = { ModelSubtitle(state.model, onOpenModels) },
+                onTitleClick = if (state.messages.isNotEmpty()) ({ renaming = true }) else null,
                 actions = {
                     SunIconButton(
                         SunIcons.Tune,
@@ -173,6 +193,22 @@ fun ChatScreen(
                     SunIconButton(SunIcons.Script, "System prompt", { editingPrompt = true })
                 },
             )
+
+            AnimatedVisibility(
+                visible = renaming,
+                enter = fadeIn(Motion.enter()) + expandVertically(Motion.enter()),
+                exit = fadeOut(Motion.exit()) + shrinkVertically(Motion.exit()),
+            ) {
+                RenameField(
+                    initial = state.title,
+                    onSave = {
+                        onRename(it)
+                        renaming = false
+                    },
+                    onCancel = { renaming = false },
+                    modifier = Modifier.padding(start = 24.dp, end = 16.dp, bottom = 6.dp),
+                )
+            }
 
             val contextSize = state.contextSize
             if (contextSize != null && state.messages.isNotEmpty()) {
@@ -191,6 +227,12 @@ fun ChatScreen(
                     ) {
                         items(state.messages, key = { it.id }) { message ->
                             val isLast = message.id == lastId
+                            val glow by animateColorAsState(
+                                if (highlightId == message.id) colors.primary.copy(alpha = 0.12f) else Color.Transparent,
+                                Motion.enter(),
+                                label = "focusGlow",
+                            )
+                            val glowModifier = Modifier.background(glow, RoundedCornerShape(18.dp))
                             val toggle = { selectedId = if (selectedId == message.id) null else message.id }
                             val copy = {
                                 copyToClipboard(context, message.content)
@@ -214,7 +256,7 @@ fun ChatScreen(
                                         } else {
                                             null
                                         },
-                                    modifier = Modifier.messageAnimation(this),
+                                    modifier = Modifier.messageAnimation(this).then(glowModifier),
                                 )
                             } else {
                                 AssistantMessage(
@@ -229,7 +271,7 @@ fun ChatScreen(
                                     onTap = toggle,
                                     onCopy = copy,
                                     onRegenerate = if (isLast && state.canSend) onRegenerate else null,
-                                    modifier = Modifier.messageAnimation(this),
+                                    modifier = Modifier.messageAnimation(this).then(glowModifier),
                                 )
                             }
                         }

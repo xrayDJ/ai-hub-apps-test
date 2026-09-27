@@ -96,6 +96,41 @@ class ConversationRepository(
 
     suspend fun deleteConversation(id: String) = database().conversations().delete(id)
 
+    suspend fun rename(
+        id: String,
+        title: String,
+    ) {
+        val clean = title.trim().lineSequence().firstOrNull()?.trim().orEmpty()
+        if (clean.isNotEmpty()) database().conversations().rename(id, clean.take(TITLE_LIMIT))
+    }
+
+    suspend fun setPinned(
+        id: String,
+        pinned: Boolean,
+    ) = database().conversations().setPinned(id, pinned)
+
+    /**
+     * Chats whose title or messages contain [query], ignoring case. Title matches
+     * come first; each chat appears once, with its most recent matching message.
+     */
+    suspend fun search(query: String): List<SearchHit> {
+        val q = query.trim()
+        if (q.isEmpty()) return emptyList()
+        val db = database()
+        val pattern = "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        val byTitle = db.conversations().searchTitles(pattern)
+        val messages = db.messages().search(pattern, SEARCH_LIMIT)
+        val hits = LinkedHashMap<String, SearchHit>()
+        byTitle.forEach { hits[it.id] = SearchHit(it, null, null) }
+        for (message in messages) {
+            val existing = hits[message.conversationId]
+            if (existing?.messageId != null) continue
+            val conversation = existing?.conversation ?: db.conversations().get(message.conversationId) ?: continue
+            hits[conversation.id] = SearchHit(conversation, message.id, snippet(message.content, q))
+        }
+        return hits.values.toList()
+    }
+
     private fun titleFrom(text: String): String {
         val line = text.trim().lineSequence().first().trim()
         return if (line.length <= TITLE_MAX) line else line.take(TITLE_MAX).trimEnd() + "…"
@@ -105,5 +140,14 @@ class ConversationRepository(
         const val ROLE_USER = "user"
         const val ROLE_ASSISTANT = "assistant"
         private const val TITLE_MAX = 48
+        private const val TITLE_LIMIT = 120
+        private const val SEARCH_LIMIT = 300
     }
 }
+
+/** A chat matching a search, with the matching message when the match is in the text. */
+data class SearchHit(
+    val conversation: ConversationEntity,
+    val messageId: String?,
+    val snippet: Snippet?,
+)

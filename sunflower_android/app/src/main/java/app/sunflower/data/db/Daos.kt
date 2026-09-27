@@ -21,6 +21,22 @@ interface ConversationDao {
 
     @Query("DELETE FROM conversations WHERE id = :id")
     suspend fun delete(id: String)
+
+    @Query("UPDATE conversations SET title = :title WHERE id = :id")
+    suspend fun rename(
+        id: String,
+        title: String,
+    )
+
+    @Query("UPDATE conversations SET pinned = :pinned WHERE id = :id")
+    suspend fun setPinned(
+        id: String,
+        pinned: Boolean,
+    )
+
+    /** Titles containing [pattern] (a LIKE pattern with backslash escapes). */
+    @Query("SELECT * FROM conversations WHERE title LIKE :pattern ESCAPE '\\' ORDER BY pinned DESC, updatedAt DESC")
+    suspend fun searchTitles(pattern: String): List<ConversationEntity>
 }
 
 @Dao
@@ -36,6 +52,13 @@ interface MessageDao {
 
     @Query("DELETE FROM messages WHERE id = :id")
     suspend fun delete(id: String)
+
+    /** Messages containing [pattern] (a LIKE pattern with backslash escapes), newest first. */
+    @Query("SELECT * FROM messages WHERE content LIKE :pattern ESCAPE '\\' ORDER BY createdAt DESC LIMIT :limit")
+    suspend fun search(
+        pattern: String,
+        limit: Int,
+    ): List<MessageEntity>
 
     /** Removes a message and everything after it, for edit-and-resend. */
     @Query("DELETE FROM messages WHERE conversationId = :conversationId AND createdAt >= :createdAt")

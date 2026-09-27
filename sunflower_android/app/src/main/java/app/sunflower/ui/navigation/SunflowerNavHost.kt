@@ -43,7 +43,11 @@ data class ModelSettingsRoute(val modelId: String, val conversationId: String? =
 
 /** A null id opens a fresh chat that is saved on its first message. */
 @Serializable
-data class ChatRoute(val conversationId: String? = null)
+data class ChatRoute(
+    val conversationId: String? = null,
+    /** A message to bring into view on opening, e.g. from search. */
+    val messageId: String? = null,
+)
 
 @Composable
 fun SunflowerNavHost(
@@ -76,9 +80,12 @@ fun SunflowerNavHost(
             HomeScreen(
                 state = state,
                 onNewChat = { nav.navigate(ChatRoute()) },
-                onOpenChat = { nav.navigate(ChatRoute(it)) },
+                onOpenChat = { id, messageId -> nav.navigate(ChatRoute(id, messageId)) },
                 onOpenModels = { nav.navigate(ModelsRoute) },
                 onDelete = vm::delete,
+                onRename = vm::rename,
+                onSetPinned = vm::setPinned,
+                onQueryChange = vm::setQuery,
                 onOpenSettings = { nav.navigate(AppSettingsRoute) },
                 onResetStorage = container::wipeAndRestart,
             )
@@ -128,6 +135,8 @@ fun SunflowerNavHost(
                 onLoadChatModel = vm::loadChatModel,
                 onKeepCurrentModel = vm::keepCurrentModel,
                 onToggleThinking = vm::toggleThinking,
+                onRename = vm::rename,
+                focusMessageId = route.messageId,
                 onSystemPromptChange = vm::setSystemPrompt,
                 onBack = { nav.popBackStack() },
                 onOpenModels = { nav.navigate(ModelsRoute) },

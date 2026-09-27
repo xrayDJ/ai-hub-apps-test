@@ -1,6 +1,24 @@
 package app.sunflower.ui.home
 
 import android.text.format.DateUtils
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
+import app.sunflower.data.SearchHit
+import app.sunflower.ui.components.RenameField
 import androidx.compose.animation.core.animateFloatAsState
 import app.sunflower.ui.components.rememberHaptics
 import androidx.compose.runtime.setValue
@@ -68,14 +86,59 @@ import app.sunflower.ui.theme.SunflowerTheme
 fun HomeScreen(
     state: HomeState,
     onNewChat: () -> Unit,
-    onOpenChat: (String) -> Unit,
+    onOpenChat: (conversationId: String, messageId: String?) -> Unit,
     onOpenModels: () -> Unit,
     onDelete: (String) -> Unit,
+    onRename: (id: String, title: String) -> Unit,
+    onSetPinned: (id: String, pinned: Boolean) -> Unit,
+    onQueryChange: (String?) -> Unit,
     onResetStorage: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
-    var confirmingId by remember { mutableStateOf<String?>(null) }
+    // One row at a time shows its actions, rename field or delete confirmation.
+    var rowMode by remember { mutableStateOf<Pair<String, RowMode>?>(null) }
+    BackHandler(enabled = state.query != null || rowMode != null) {
+        if (rowMode != null) rowMode = null else onQueryChange(null)
+    }
+    val pinned = state.conversations.filter { it.pinned }
+    val recent = state.conversations.filterNot { it.pinned }
+    fun LazyListScope.section(
+        title: String,
+        conversations: List<ConversationEntity>,
+    ) {
+        item(key = "section-$title") {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleLarge,
+                color = colors.onBackground,
+                modifier = Modifier.padding(top = 26.dp, bottom = 4.dp).animateItem(),
+            )
+        }
+        items(conversations, key = { it.id }) { conversation ->
+            val mode = rowMode?.takeIf { it.first == conversation.id }?.second ?: RowMode.Plain
+            ConversationRow(
+                conversation = conversation,
+                mode = mode,
+                onClick = { if (rowMode != null) rowMode = null else onOpenChat(conversation.id, null) },
+                onLongClick = { rowMode = conversation.id to RowMode.Actions },
+                onMode = { next -> rowMode = next?.let { conversation.id to it } },
+                onPin = {
+                    onSetPinned(conversation.id, !conversation.pinned)
+                    rowMode = null
+                },
+                onRename = { title ->
+                    onRename(conversation.id, title)
+                    rowMode = null
+                },
+                onDelete = {
+                    rowMode = null
+                    onDelete(conversation.id)
+                },
+                modifier = Modifier.animateItem(),
+            )
+        }
+    }
     Box(
         Modifier
             .fillMaxSize()
@@ -100,34 +163,44 @@ fun HomeScreen(
             contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 120.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            item { Header(onOpenModels, onOpenSettings, Modifier.statusBarsPadding()) }
-            item { ModelCard(state.runtime, state.engine, onOpenModels, Modifier.padding(top = 24.dp)) }
-            if (state.storageError != null) {
-                item { StorageRecovery(state.storageError, onResetStorage) }
-            } else if (state.conversations.isNotEmpty()) {
-                item {
-                    Text(
-                        "Recent",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = colors.onBackground,
-                        modifier = Modifier.padding(top = 26.dp, bottom = 4.dp),
-                    )
+            item(key = "header") {
+                Header(
+                    onOpenModels = onOpenModels,
+                    onOpenSettings = onOpenSettings,
+                    onSearch = if (state.conversations.isNotEmpty() && state.query == null) ({ onQueryChange("") }) else null,
+                    modifier = Modifier.statusBarsPadding(),
+                )
+            }
+            if (state.query != null) {
+                item(key = "search") {
+                    SearchField(state.query, onQueryChange, Modifier.padding(top = 16.dp))
                 }
-                items(state.conversations, key = { it.id }) { conversation ->
-                    ConversationRow(
-                        conversation = conversation,
-                        confirming = confirmingId == conversation.id,
-                        onClick = {
-                            if (confirmingId != null) confirmingId = null else onOpenChat(conversation.id)
-                        },
-                        onLongClick = { confirmingId = conversation.id },
-                        onDelete = {
-                            confirmingId = null
-                            onDelete(conversation.id)
-                        },
-                        onCancel = { confirmingId = null },
-                        modifier = Modifier.animateItem(),
-                    )
+                if (state.searching) {
+                    if (state.results.isEmpty()) {
+                        item(key = "no-results") {
+                            Text(
+                                "No chats match",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = colors.onSurfaceVariant,
+                                modifier = Modifier.fillMaxWidth().padding(top = 32.dp).animateItem(),
+                                textAlign = TextAlign.Center,
+                            )
+                        }
+                    }
+                    items(state.results, key = { "hit-" + it.conversation.id }) { hit ->
+                        SearchResultRow(hit, { onOpenChat(hit.conversation.id, hit.messageId) }, Modifier.animateItem())
+                    }
+                } else {
+                    if (pinned.isNotEmpty()) section("Pinned", pinned)
+                    if (recent.isNotEmpty()) section("Recent", recent)
+                }
+            } else {
+                item(key = "model") { ModelCard(state.runtime, state.engine, onOpenModels, Modifier.padding(top = 24.dp)) }
+                if (state.storageError != null) {
+                    item(key = "storage") { StorageRecovery(state.storageError, onResetStorage) }
+                } else {
+                    if (pinned.isNotEmpty()) section("Pinned", pinned)
+                    if (recent.isNotEmpty()) section("Recent", recent)
                 }
             }
         }
@@ -149,6 +222,7 @@ fun HomeScreen(
 private fun Header(
     onOpenModels: () -> Unit,
     onOpenSettings: () -> Unit,
+    onSearch: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -161,6 +235,10 @@ private fun Header(
         Spacer(Modifier.width(10.dp))
         Text("sunflower", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onBackground)
         Spacer(Modifier.weight(1f))
+        if (onSearch != null) {
+            SunIconButton(Icons.Outlined.Search, "Search chats", onSearch)
+            Spacer(Modifier.width(8.dp))
+        }
         SunIconButton(SunIcons.Layers, "Models", onOpenModels)
         Spacer(Modifier.width(8.dp))
         SunIconButton(Icons.Outlined.Settings, "Settings", onOpenSettings)
@@ -240,15 +318,19 @@ private fun StatusDot(
     )
 }
 
+enum class RowMode { Plain, Actions, Renaming, ConfirmDelete }
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ConversationRow(
     conversation: ConversationEntity,
-    confirming: Boolean,
+    mode: RowMode,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    onMode: (RowMode?) -> Unit,
+    onPin: () -> Unit,
+    onRename: (String) -> Unit,
     onDelete: () -> Unit,
-    onCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -263,6 +345,7 @@ private fun ConversationRow(
             .combinedClickable(
                 interactionSource = source,
                 indication = ripple(),
+                enabled = mode != RowMode.Renaming,
                 onClick = onClick,
                 onLongClick = {
                     haptics.confirm()
@@ -273,52 +356,153 @@ private fun ConversationRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AnimatedContent(
-            targetState = confirming,
+            targetState = mode,
             transitionSpec = { fadeIn(Motion.enter()) togetherWith fadeOut(Motion.exit()) },
-            label = "rowConfirm",
+            label = "rowMode",
             modifier = Modifier.weight(1f),
-        ) { isConfirming ->
-            if (isConfirming) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        "Delete this chat?",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = colors.onSurface,
-                        modifier = Modifier.weight(1f),
-                    )
-                    SunButton("Cancel", onCancel, style = SunButtonStyle.Ghost)
-                    SunButton("Delete", onDelete, style = SunButtonStyle.Tonal)
-                }
-            } else {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
+        ) { current ->
+            when (current) {
+                RowMode.Plain ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                conversation.title,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = colors.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                conversation.modelName ?: "No model yet",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colors.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.MiddleEllipsis,
+                            )
+                        }
+                        Spacer(Modifier.width(12.dp))
                         Text(
-                            conversation.title,
-                            style = MaterialTheme.typography.titleMedium,
-                            color = colors.onSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            conversation.modelName ?: "No model yet",
-                            style = MaterialTheme.typography.bodySmall,
+                            relativeTime(conversation.updatedAt),
+                            style = MaterialTheme.typography.labelSmall,
                             color = colors.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.MiddleEllipsis,
+                            modifier = Modifier.padding(end = 10.dp),
                         )
                     }
-                    Spacer(Modifier.width(12.dp))
-                    Text(
-                        DateUtils.getRelativeTimeSpanString(conversation.updatedAt, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS).toString(),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = colors.onSurfaceVariant,
-                        modifier = Modifier.padding(end = 10.dp),
-                    )
-                }
+                RowMode.Actions ->
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                        SunButton(if (conversation.pinned) "Unpin" else "Pin", onPin, style = SunButtonStyle.Ghost)
+                        SunButton("Rename", { onMode(RowMode.Renaming) }, style = SunButtonStyle.Ghost)
+                        SunButton("Delete", { onMode(RowMode.ConfirmDelete) }, style = SunButtonStyle.Ghost)
+                        Spacer(Modifier.weight(1f))
+                        SunIconButton(Icons.Outlined.Close, "Close", { onMode(null) }, size = 40.dp, container = Color.Transparent)
+                    }
+                RowMode.Renaming -> RenameField(conversation.title, onRename, onCancel = { onMode(null) })
+                RowMode.ConfirmDelete ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "Delete this chat?",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = colors.onSurface,
+                            modifier = Modifier.weight(1f),
+                        )
+                        SunButton("Cancel", { onMode(null) }, style = SunButtonStyle.Ghost)
+                        SunButton("Delete", onDelete, style = SunButtonStyle.Tonal)
+                    }
             }
         }
     }
 }
+
+@Composable
+private fun SearchField(
+    query: String,
+    onQueryChange: (String?) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = MaterialTheme.colorScheme
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { focus.requestFocus() }
+    val shape = RoundedCornerShape(28.dp)
+    Row(
+        modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(colors.surfaceContainerHigh)
+            .border(1.dp, colors.outlineVariant, shape)
+            .padding(start = 18.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Outlined.Search, contentDescription = null, tint = colors.onSurfaceVariant, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(12.dp))
+        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+            if (query.isEmpty()) {
+                Text("Search chats", style = MaterialTheme.typography.bodyLarge, color = colors.onSurfaceVariant)
+            }
+            BasicTextField(
+                value = query,
+                onValueChange = { onQueryChange(it) },
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.onSurface),
+                cursorBrush = SolidColor(colors.primary),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                modifier = Modifier.fillMaxWidth().focusRequester(focus),
+            )
+        }
+        SunIconButton(Icons.Outlined.Close, "Close search", { onQueryChange(null) }, container = Color.Transparent)
+    }
+}
+
+@Composable
+private fun SearchResultRow(
+    hit: SearchHit,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = MaterialTheme.colorScheme
+    val source = remember { MutableInteractionSource() }
+    Column(
+        modifier
+            .fillMaxWidth()
+            .pressScale(source, 0.98f)
+            .clip(MaterialTheme.shapes.large)
+            .background(colors.surfaceContainerLow)
+            .clickable(interactionSource = source, indication = ripple(), onClick = onClick)
+            .padding(horizontal = 18.dp, vertical = 12.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                hit.conversation.title,
+                style = MaterialTheme.typography.titleMedium,
+                color = colors.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.width(12.dp))
+            Text(relativeTime(hit.conversation.updatedAt), style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
+        }
+        hit.snippet?.let { snippet ->
+            val highlighted =
+                remember(snippet, colors.primary) {
+                    buildAnnotatedString {
+                        append(snippet.text)
+                        addStyle(SpanStyle(color = colors.primary, fontWeight = FontWeight.SemiBold), snippet.matchStart, snippet.matchEnd)
+                    }
+                }
+            Text(
+                highlighted,
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+    }
+}
+
+private fun relativeTime(time: Long): String =
+    DateUtils.getRelativeTimeSpanString(time, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS).toString()
 
 /** The encrypted database couldn't be opened: explain, and offer a clean start. */
 @Composable

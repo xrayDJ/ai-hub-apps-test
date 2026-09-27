@@ -296,6 +296,11 @@ class ChatViewModel(
         keepCurrentModel.value = true
     }
 
+    fun rename(title: String) {
+        val id = conversationId.value ?: return
+        viewModelScope.launch { repository.rename(id, title) }
+    }
+
     /** Flips reasoning for the loaded model; applies from the next message, no reload needed. */
     fun toggleThinking() {
         val model = (engine.state.value as? InferenceEngine.State.Ready)?.model ?: return

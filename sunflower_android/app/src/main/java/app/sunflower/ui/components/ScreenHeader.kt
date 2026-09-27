@@ -1,5 +1,6 @@
 package app.sunflower.ui.components
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -25,6 +26,8 @@ fun ScreenHeader(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     subtitle: (@Composable () -> Unit)? = null,
+    /** Makes the title tappable, e.g. to rename. */
+    onTitleClick: (() -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     Row(
@@ -43,6 +46,7 @@ fun ScreenHeader(
                 color = MaterialTheme.colorScheme.onBackground,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = if (onTitleClick != null) Modifier.clickable(onClickLabel = "Rename", onClick = onTitleClick) else Modifier,
             )
             subtitle?.invoke()
         }
