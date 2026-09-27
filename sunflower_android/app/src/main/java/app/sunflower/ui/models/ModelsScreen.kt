@@ -492,42 +492,23 @@ private fun backendSummary(
         ?: "Auto"
 
 /**
- * What this phone offers, in one plain sentence with the figures that matter
- * picked out: where models run, how much memory there is, and the model size
- * that fits. The reasoning behind it is one tap away.
+ * One quiet line about this phone: its chip and where models run. The info
+ * button opens a short paragraph on what that means for running AI locally.
  */
 @Composable
 private fun DeviceSummary(device: DeviceProfile) {
-    val context = LocalContext.current
     val colors = MaterialTheme.colorScheme
     var explain by rememberSaveable { mutableStateOf(false) }
-    val strong = SpanStyle(color = colors.onSurface, fontWeight = FontWeight.Medium)
-    val summary =
-        buildAnnotatedString {
-            append("Runs models on the ")
-            withStyle(strong) { append(device.bestBackend.label) }
-            ramLabel(device)?.let {
-                append(", with ")
-                withStyle(strong) { append(it) }
-                append(" of memory")
-            }
-            append(". Models up to ")
-            withStyle(strong) { append(Formatter.formatShortFileSize(context, device.comfortableModelBytes)) }
-            append(" (about ${device.comfortableParams}B parameters at 4-bit) ")
-            append(if (device.bestBackend == Backend.CPU) "reply at a comfortable pace." else "fit comfortably.")
-        }
-    Column(Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 4.dp, bottom = 14.dp)) {
-        Text("This phone", style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
+    Column(Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, bottom = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                device.chip ?: "Unrecognised chip",
-                style = MaterialTheme.typography.titleMedium,
-                color = colors.onSurface,
+                "${device.chip ?: "This phone"}  ·  runs on the ${device.bestBackend.label}",
+                style = MaterialTheme.typography.labelMedium,
+                color = colors.onSurfaceVariant,
                 modifier = Modifier.weight(1f, fill = false),
             )
             InfoHintButton(explain, { explain = !explain })
         }
-        Text(summary, style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
         AnimatedVisibility(
             visible = explain,
             enter = fadeIn(Motion.enter()) + expandVertically(Motion.enter()),
@@ -537,7 +518,7 @@ private fun DeviceSummary(device: DeviceProfile) {
                 deviceReasoning(device),
                 style = MaterialTheme.typography.bodyMedium,
                 color = colors.onSurfaceVariant,
-                modifier = Modifier.padding(top = 10.dp),
+                modifier = Modifier.padding(top = 2.dp, bottom = 6.dp),
             )
         }
     }
@@ -610,23 +591,25 @@ private fun ramLabel(device: DeviceProfile): String? =
     device.totalRamBytes.takeIf { it > 0 }?.let { "${Math.ceil(it / 1_073_741_824.0).toInt()} GB" }
 
 private fun deviceReasoning(device: DeviceProfile): String {
-    val where =
+    val chip = device.chip ?: "This phone's chip"
+    val hardware =
         when (device.bestBackend) {
-            Backend.NPU -> "Models run on this phone's NPU, the fastest and most power-efficient option, with the GPU and CPU as fallbacks."
+            Backend.NPU ->
+                "$chip has an NPU, a processor built only for the maths neural networks run on, " +
+                    "so models answer faster and use less battery than on the CPU or GPU."
             Backend.GPU ->
-                "The NPU backend isn't built for this chip, so models run on its Adreno GPU, with the CPU as a fallback. " +
-                    "You can still try the NPU from a model's options."
+                "The NPU on ${device.chip ?: "this chip"} isn't supported yet, so models run on its Adreno GPU, " +
+                    "which handles the same maths in parallel nearly as well."
             Backend.CPU ->
-                "This phone doesn't have a Snapdragon chip, so models run on the CPU. It works everywhere but is slower, " +
-                    "so smaller models give the best experience. You can still try the GPU from a model's options."
+                "This phone has no supported AI accelerator, so models run on its CPU: it works everywhere, just more slowly."
         }
-    val size =
+    val limit =
         if (device.bestBackend == Backend.CPU) {
-            "On the CPU, speed runs out before memory: bigger models load but write slowly."
+            "Small models give the best experience here, up to about ${device.comfortableParams}B parameters."
         } else {
-            "The comfortable size leaves room for the conversation and for Android and your other apps; bigger models can load but may be stopped by Android."
+            "Smaller models reply faster and leave room for longer chats; around ${device.comfortableParams}B parameters at 4-bit is a comfortable ceiling."
         }
-    return "$where $size"
+    return "$hardware Everything happens on the phone, so nothing you write leaves it and it works offline. $limit"
 }
 
 /** A note when the chosen backend isn't one this chip is known to run. */
