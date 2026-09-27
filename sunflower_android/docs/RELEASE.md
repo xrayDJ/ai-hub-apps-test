@@ -92,5 +92,5 @@ NPU. Other phones run them on the GPU or CPU; smaller models work best there.
 
 ## Later
 
-- Curated models: a link to a Sunflower blog page listing recommended GGUFs with
-  their licenses (the app itself stays offline; downloads happen in the browser).
+Planned work, including in-app reporting of replies, is described in
+`ROADMAP.md`.

@@ -11,6 +11,18 @@ on-device, built on the [GenieX SDK](https://github.com/qualcomm/geniex)
   (AES-256, HMAC-SHA512 page authentication). Its 256-bit key is sealed by an
   AES-256-GCM key held in the Android Keystore, in StrongBox where available.
 
+## Documentation
+
+| Document | Contents |
+|---|---|
+| [`docs/OVERVIEW.md`](docs/OVERVIEW.md) | Who Sunflower is for, what it is and isn't, its principles |
+| [`docs/STATUS.md`](docs/STATUS.md) | What is built, what has been verified, known gaps |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Code layout, how models load and replies are produced, data |
+| [`docs/DESIGN.md`](docs/DESIGN.md) | Colour, surfaces, motion and wording |
+| [`docs/ROADMAP.md`](docs/ROADMAP.md) | Planned work, each with a plan |
+| [`docs/RELEASE.md`](docs/RELEASE.md) | Builds, signing, Play Console, checklist |
+| [`docs/PRIVACY.md`](docs/PRIVACY.md) | Privacy policy |
+
 ## Build
 
 Requires JDK 17 and the Android SDK (platform 36).
@@ -34,14 +46,16 @@ excluded in `app/build.gradle.kts`.
 
 ## Layout
 
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full picture.
+
 | Package | Responsibility |
 |---|---|
 | `security` | `KeyVault`: hardware-backed key that encrypts the database key |
-| `data` | Room + SQLCipher database, conversation repository |
-| `engine` | GenieX runtime lifecycle; model loading and generation |
-| `ui/theme` | Colour, type and motion tokens |
-| `ui/components` | Sunflower mark, buttons, haptics, shared pieces |
-| `ui/*` | Screens: home, models, chat |
+| `data` | Room + SQLCipher database, conversations, models, prompts, search |
+| `engine` | GenieX runtime, model loading and generation, GGUF reading, settings, device profile |
+| `ui/theme` | Colour, type, motion and surface tokens |
+| `ui/components` | Sunflower mark, buttons, hints, shared pieces |
+| `ui/*` | Screens: home, chat, models, settings, Markdown rendering |
 
 ## Licenses
 
