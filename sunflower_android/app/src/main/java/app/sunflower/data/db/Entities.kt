@@ -17,6 +17,8 @@ data class ConversationEntity(
     val createdAt: Long,
     val updatedAt: Long,
     val pinned: Boolean = false,
+    /** The model the conversation was last run with, offered again when the chat is reopened. */
+    val modelId: String? = null,
 )
 
 @Entity(

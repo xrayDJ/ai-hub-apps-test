@@ -69,13 +69,16 @@ class ConversationRepository(
         db.conversations().upsert(conversation.copy(updatedAt = message.createdAt))
     }
 
-    suspend fun setModelName(
+    suspend fun setModel(
         conversationId: String,
+        modelId: String,
         modelName: String,
     ) {
         val dao = database().conversations()
         val conversation = dao.get(conversationId) ?: return
-        if (conversation.modelName != modelName) dao.upsert(conversation.copy(modelName = modelName))
+        if (conversation.modelId != modelId || conversation.modelName != modelName) {
+            dao.upsert(conversation.copy(modelId = modelId, modelName = modelName))
+        }
     }
 
     suspend fun updateSystemPrompt(

@@ -555,7 +555,7 @@ class InferenceEngine(
             val split = splitThinking(raw.toString(), openedByPrompt)
             if (split.content.isNotBlank() || !split.thinking.isNullOrBlank()) {
                 conversations.addAssistantMessage(reply(split))
-                conversations.setModelName(conversationId, ready.model.displayName)
+                conversations.setModel(conversationId, ready.model.id, ready.model.displayName)
             }
         } catch (e: Exception) {
             error = e.message ?: e.javaClass.simpleName

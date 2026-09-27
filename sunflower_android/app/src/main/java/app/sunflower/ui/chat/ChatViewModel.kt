@@ -3,12 +3,15 @@ package app.sunflower.ui.chat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.sunflower.data.ConversationRepository
+import app.sunflower.data.ModelLibrary
 import app.sunflower.data.DEFAULT_SYSTEM_PROMPT
 import app.sunflower.data.PromptLibrary
 import app.sunflower.data.db.SystemPromptEntity
 import app.sunflower.data.db.ConversationEntity
 import app.sunflower.data.db.MessageEntity
 import app.sunflower.data.displayName
+import app.sunflower.data.isSpeculativeHead
+import app.sunflower.data.db.ModelEntity
 import app.sunflower.engine.InferenceEngine
 import app.sunflower.engine.ModelSettings
 import app.sunflower.engine.estimateTokens
@@ -56,6 +59,8 @@ data class ChatState(
     val promptLibrary: List<SystemPromptEntity> = emptyList(),
     /** Estimated tokens the chat occupies in the context window, same estimate the trimming uses. */
     val contextUsed: Int = 0,
+    /** The model this chat last ran with, when a different one (or none) is loaded now. */
+    val chatModel: ModelEntity? = null,
 ) {
     val contextSize: Int? get() = (model as? ModelStatus.Ready)?.contextSize
     val replyReserve: Int get() = (model as? ModelStatus.Ready)?.replyReserve ?: 0
@@ -70,6 +75,7 @@ class ChatViewModel(
     private val repository: ConversationRepository,
     private val engine: InferenceEngine,
     private val prompts: PromptLibrary,
+    private val library: ModelLibrary,
 ) : ViewModel() {
     // A new chat is only written to disk once the first message is sent,
     // so opening and backing out never leaves empty conversations behind.
@@ -85,6 +91,14 @@ class ChatViewModel(
 
     private val conversation =
         conversationId.flatMapLatest { id -> if (id == null) flowOf(null) else repository.observeConversation(id) }
+
+    /** Set when the user waves off the offer to switch back to this chat's model. */
+    private val keepCurrentModel = MutableStateFlow(false)
+
+    private val chatModel =
+        combine(conversation, library.observe().catch { emit(emptyList()) }) { c, models ->
+            c?.modelId?.let { id -> models.firstOrNull { it.id == id && !it.isSpeculativeHead } }
+        }
 
     private val messages =
         conversationId.flatMapLatest { id -> if (id == null) flowOf(emptyList()) else repository.observeMessages(id) }
@@ -123,7 +137,14 @@ class ChatViewModel(
         }
 
     val state: StateFlow<ChatState> =
-        combine(stored, live) { s, l ->
+        combine(stored, live, chatModel, keepCurrentModel, engine.state) { s, l, previous, keep, engineState ->
+            val current =
+                when (engineState) {
+                    is InferenceEngine.State.Ready -> engineState.model.id
+                    is InferenceEngine.State.Loading -> engineState.model.id
+                    else -> null
+                }
+            val offer = previous?.takeIf { it.id != current && !keep && l.streaming == null && !l.busyElsewhere }
             // Drop the held frame as soon as its saved message is in the list.
             // Replies are checkpointed while streaming, so the saved row can lag the live text.
             // Keep showing the live (or last live) text until the saved row has caught up.
@@ -136,7 +157,15 @@ class ChatViewModel(
                 estimateTokens(s.systemPrompt) +
                     visible.sumOf { estimateTokens(it.content) + TURN_OVERHEAD } +
                     (streaming?.let { estimateTokens(it.content + it.thinking.orEmpty()) + TURN_OVERHEAD } ?: 0)
-            s.copy(messages = visible, model = l.model, streaming = streaming, busyElsewhere = l.busyElsewhere, failure = l.failure, contextUsed = used)
+            s.copy(
+                messages = visible,
+                model = l.model,
+                streaming = streaming,
+                busyElsewhere = l.busyElsewhere,
+                failure = l.failure,
+                contextUsed = used,
+                chatModel = offer,
+            )
         }.catch { emit(ChatState()) }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChatState())
 
@@ -219,6 +248,16 @@ class ChatViewModel(
             delete = { id -> viewModelScope.launch { prompts.delete(id) } },
             setDefault = { id, isDefault -> viewModelScope.launch { prompts.setDefault(id, isDefault) } },
         )
+
+    /** Loads the model this chat last ran with. */
+    fun loadChatModel() {
+        state.value.chatModel?.let { engine.load(it) }
+    }
+
+    /** Keeps the loaded model for this chat; replies from now on are recorded with it. */
+    fun keepCurrentModel() {
+        keepCurrentModel.value = true
+    }
 
     fun stop() {
         viewModelScope.launch { engine.stop() }

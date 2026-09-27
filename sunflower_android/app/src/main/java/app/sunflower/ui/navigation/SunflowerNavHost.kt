@@ -116,7 +116,7 @@ fun SunflowerNavHost(
         }
         composable<ChatRoute> { entry ->
             val route = entry.toRoute<ChatRoute>()
-            val vm = viewModel { ChatViewModel(route.conversationId, container.conversations, container.engine, container.prompts) }
+            val vm = viewModel { ChatViewModel(route.conversationId, container.conversations, container.engine, container.prompts, container.models) }
             val state by vm.state.collectAsStateWithLifecycle()
             ChatScreen(
                 state = state,
@@ -125,6 +125,8 @@ fun SunflowerNavHost(
                 onRetry = vm::retry,
                 onRegenerate = vm::regenerate,
                 onEdit = vm::sendEdit,
+                onLoadChatModel = vm::loadChatModel,
+                onKeepCurrentModel = vm::keepCurrentModel,
                 onSystemPromptChange = vm::setSystemPrompt,
                 onBack = { nav.popBackStack() },
                 onOpenModels = { nav.navigate(ModelsRoute) },

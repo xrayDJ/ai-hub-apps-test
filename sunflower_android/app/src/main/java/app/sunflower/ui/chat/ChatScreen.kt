@@ -73,6 +73,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.sunflower.data.ConversationRepository
+import app.sunflower.data.db.ModelEntity
+import app.sunflower.data.displayName
 import app.sunflower.data.db.MessageEntity
 import app.sunflower.ui.components.InfoHintButton
 import app.sunflower.ui.components.InfoHintText
@@ -101,6 +103,8 @@ fun ChatScreen(
     onRetry: () -> Unit,
     onRegenerate: () -> Unit,
     onEdit: (messageId: String, text: String) -> Unit,
+    onLoadChatModel: () -> Unit,
+    onKeepCurrentModel: () -> Unit,
     onSystemPromptChange: (String) -> Unit,
     onBack: () -> Unit,
     onOpenModels: () -> Unit,
@@ -268,6 +272,8 @@ fun ChatScreen(
                 }
             }
 
+            ChatModelOffer(state.chatModel, state.model, onLoadChatModel, onKeepCurrentModel)
+
             AnimatedVisibility(
                 visible = state.failure != null,
                 enter = fadeIn(Motion.enter()) + expandVertically(Motion.enter()),
@@ -366,6 +372,44 @@ private fun ModelSubtitle(
             is ModelStatus.Loading ->
                 Text("Loading ${model.name}…", style = style, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.MiddleEllipsis)
             ModelStatus.None -> Text("No model loaded", style = style, color = colors.onSurfaceVariant, maxLines = 1)
+        }
+    }
+}
+
+/**
+ * Offers the model this chat last ran with when another one (or none) is loaded.
+ * Quiet: one line above the composer that goes away once either choice is made.
+ */
+@Composable
+private fun ChatModelOffer(
+    chatModel: ModelEntity?,
+    loaded: ModelStatus,
+    onLoad: () -> Unit,
+    onKeep: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    // Keep the last name while the row animates out.
+    var shown by remember { mutableStateOf(chatModel) }
+    if (chatModel != null) shown = chatModel
+    AnimatedVisibility(
+        visible = chatModel != null,
+        enter = fadeIn(Motion.enter()) + expandVertically(Motion.enter()),
+        exit = fadeOut(Motion.exit()) + shrinkVertically(Motion.exit()),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, top = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "This chat used ${shown?.displayName.orEmpty()}",
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.MiddleEllipsis,
+                modifier = Modifier.weight(1f),
+            )
+            if (loaded is ModelStatus.Ready) SunButton("Keep current", onKeep, style = SunButtonStyle.Ghost)
+            SunButton(if (loaded is ModelStatus.Ready) "Switch" else "Load", onLoad, style = SunButtonStyle.Ghost)
         }
     }
 }
