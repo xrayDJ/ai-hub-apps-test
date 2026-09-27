@@ -1,6 +1,7 @@
 package app.sunflower.ui.chat
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
@@ -14,7 +15,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,12 +33,17 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import app.sunflower.ui.components.SunIconButton
 import app.sunflower.ui.components.SunIcons
+import app.sunflower.ui.components.rememberHaptics
 import app.sunflower.ui.theme.Motion
 
 @Composable
@@ -46,6 +55,9 @@ fun Composer(
     generating: Boolean,
     ready: Boolean,
     modifier: Modifier = Modifier,
+    /** Reasoning switch for models that support it; null hides it. */
+    thinking: Boolean? = null,
+    onToggleThinking: () -> Unit = {},
 ) {
     val colors = MaterialTheme.colorScheme
     val canSend = ready && text.isNotBlank()
@@ -89,6 +101,13 @@ fun Composer(
             )
         }
         Spacer(Modifier.width(8.dp))
+        AnimatedVisibility(
+            visible = thinking != null,
+            enter = fadeIn(Motion.enter()) + scaleIn(Motion.bouncy()),
+            exit = fadeOut(Motion.exit()) + scaleOut(Motion.exit()),
+        ) {
+            ThinkToggle(on = thinking == true, onToggle = onToggleThinking, modifier = Modifier.padding(end = 6.dp))
+        }
         AnimatedContent(
             targetState = generating,
             transitionSpec = { (scaleIn(Motion.bouncy()) + fadeIn(Motion.enter())) togetherWith (scaleOut(Motion.exit()) + fadeOut(Motion.exit())) },
@@ -109,4 +128,36 @@ fun Composer(
             )
         }
     }
+}
+
+/** "Think" pill: asks the model to reason before answering, from the next message on. */
+@Composable
+private fun ThinkToggle(
+    on: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = MaterialTheme.colorScheme
+    val haptics = rememberHaptics()
+    val shape = RoundedCornerShape(50)
+    val background by animateColorAsState(if (on) colors.primary.copy(alpha = 0.16f) else Color.Transparent, Motion.enter(), label = "thinkBg")
+    val border by animateColorAsState(if (on) colors.primary.copy(alpha = 0.5f) else colors.outlineVariant, Motion.enter(), label = "thinkBorder")
+    val content by animateColorAsState(if (on) colors.primary else colors.onSurfaceVariant, Motion.enter(), label = "thinkFg")
+    Text(
+        "Think",
+        style = MaterialTheme.typography.labelLarge,
+        color = content,
+        modifier =
+            modifier
+                .height(44.dp)
+                .wrapContentHeight(Alignment.CenterVertically)
+                .clip(shape)
+                .background(background)
+                .border(1.dp, border, shape)
+                .toggleable(value = on, role = Role.Switch) {
+                    haptics.tick()
+                    onToggle()
+                }.semantics { contentDescription = if (on) "Reasoning on" else "Reasoning off" }
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+    )
 }

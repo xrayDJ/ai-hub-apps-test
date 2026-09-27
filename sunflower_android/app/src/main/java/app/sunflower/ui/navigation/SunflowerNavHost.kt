@@ -127,6 +127,7 @@ fun SunflowerNavHost(
                 onEdit = vm::sendEdit,
                 onLoadChatModel = vm::loadChatModel,
                 onKeepCurrentModel = vm::keepCurrentModel,
+                onToggleThinking = vm::toggleThinking,
                 onSystemPromptChange = vm::setSystemPrompt,
                 onBack = { nav.popBackStack() },
                 onOpenModels = { nav.navigate(ModelsRoute) },

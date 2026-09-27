@@ -26,6 +26,8 @@ data class GgufInfo(
     val nextnLayers: Int? = null,
     /** Sampler values the model's authors recommend (general.sampling.*), if declared. */
     val recommendedSampling: Sampling? = null,
+    /** Whether the built-in chat template reasons, and whether that can be switched. */
+    val reasoning: Reasoning = Reasoning.None,
 ) {
     /**
      * Rough KV-cache size for [contextSize] tokens at 16-bit precision. Models
@@ -45,6 +47,33 @@ data class GgufInfo(
 }
 
 const val EAGLE3_ARCH = "eagle3"
+
+/** How a chat template handles reasoning. */
+enum class Reasoning {
+    /** No reasoning: the toggle is hidden. */
+    None,
+
+    /** Reasons only when asked (`enable_thinking`: Qwen3, Gemma 4, SmolLM3, …). */
+    Switchable,
+
+    /** Always reasons (DeepSeek R1 distills, Qwen3 Thinking, gpt-oss). */
+    Always,
+}
+
+/**
+ * Reads a Jinja chat template for reasoning support. Switchable templates read the
+ * `enable_thinking` flag the runtime passes; always-on ones open a think block in
+ * the generation prompt or take a reasoning effort.
+ */
+fun reasoningOf(template: String): Reasoning =
+    when {
+        "enable_thinking" in template -> Reasoning.Switchable
+        "reasoning_effort" in template -> Reasoning.Always
+        ALWAYS_THINKS.containsMatchIn(template) -> Reasoning.Always
+        else -> Reasoning.None
+    }
+
+private val ALWAYS_THINKS = Regex("""add_generation_prompt[\s\S]{0,300}?<think>""")
 
 /** Architectures that are MTP drafters for another model, never chat models themselves. */
 val MTP_HEAD_ARCHS = setOf("gemma4-assistant")
@@ -71,14 +100,14 @@ object GgufReader {
         val ints = HashMap<String, Long>()
         val floats = HashMap<String, Double>()
         var hasTemplate = false
+        var reasoning = Reasoning.None
         for (i in 0 until kvCount) {
             val key = s.string()
             when (val type = s.u32().toInt()) {
                 TYPE_STRING -> {
-                    // Chat templates can be long; only their presence matters here.
                     if (key == "tokenizer.chat_template") {
                         hasTemplate = true
-                        s.skipString()
+                        reasoning = reasoningOf(s.string())
                     } else {
                         strings[key] = s.string()
                     }
@@ -106,6 +135,7 @@ object GgufReader {
             valueLength = arch?.let { ints["$it.attention.value_length"]?.toInt() },
             nextnLayers = arch?.let { ints["$it.nextn_predict_layers"]?.toInt() },
             recommendedSampling = recommendedSampling(ints, floats),
+            reasoning = reasoning,
         )
     }
 

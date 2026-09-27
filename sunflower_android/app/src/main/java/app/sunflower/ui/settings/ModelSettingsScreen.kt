@@ -318,8 +318,9 @@ private fun ConversationTab(
     SettingSection("Reasoning") {
         ToggleSetting(
             "Thinking",
-            "Asks models that support it (Qwen3, DeepSeek R1 distills and others) to reason step by step before answering. " +
-                "Replies take longer and can be more accurate. The reasoning appears folded above the answer. Other models ignore this.",
+            "Asks models that can switch reasoning on (Qwen3, Gemma 4, SmolLM3 and others) to reason step by step before answering. " +
+                "Replies take longer and can be more accurate. The reasoning appears folded above the answer. " +
+                "Also available as Think next to the message box. Models that always reason, or never do, ignore this.",
             c.thinking, d.thinking, { v -> set { copy(thinking = v) } },
         )
     }

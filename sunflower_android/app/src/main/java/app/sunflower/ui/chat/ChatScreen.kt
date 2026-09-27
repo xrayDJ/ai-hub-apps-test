@@ -75,6 +75,7 @@ import androidx.compose.ui.unit.dp
 import app.sunflower.data.ConversationRepository
 import app.sunflower.data.db.ModelEntity
 import app.sunflower.data.displayName
+import app.sunflower.engine.Reasoning
 import app.sunflower.data.db.MessageEntity
 import app.sunflower.ui.components.InfoHintButton
 import app.sunflower.ui.components.InfoHintText
@@ -105,6 +106,7 @@ fun ChatScreen(
     onEdit: (messageId: String, text: String) -> Unit,
     onLoadChatModel: () -> Unit,
     onKeepCurrentModel: () -> Unit,
+    onToggleThinking: () -> Unit,
     onSystemPromptChange: (String) -> Unit,
     onBack: () -> Unit,
     onOpenModels: () -> Unit,
@@ -329,6 +331,8 @@ fun ChatScreen(
                 onStop = onStop,
                 generating = state.generating,
                 ready = state.canSend,
+                thinking = if (state.reasoning == Reasoning.Switchable && state.model is ModelStatus.Ready) state.thinking else null,
+                onToggleThinking = onToggleThinking,
                 modifier =
                     Modifier
                         .navigationBarsPadding()

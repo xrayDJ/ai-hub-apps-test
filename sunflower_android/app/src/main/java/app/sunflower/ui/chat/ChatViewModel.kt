@@ -14,6 +14,8 @@ import app.sunflower.data.isSpeculativeHead
 import app.sunflower.data.db.ModelEntity
 import app.sunflower.engine.InferenceEngine
 import app.sunflower.engine.ModelSettings
+import app.sunflower.engine.Reasoning
+import app.sunflower.engine.reasoningOf
 import app.sunflower.engine.estimateTokens
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -25,6 +27,9 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -61,6 +66,10 @@ data class ChatState(
     val contextUsed: Int = 0,
     /** The model this chat last ran with, when a different one (or none) is loaded now. */
     val chatModel: ModelEntity? = null,
+    /** How the loaded model reasons; null while unknown. */
+    val reasoning: Reasoning? = null,
+    /** The loaded model's "reason before answering" setting. */
+    val thinking: Boolean = false,
 ) {
     val contextSize: Int? get() = (model as? ModelStatus.Ready)?.contextSize
     val replyReserve: Int get() = (model as? ModelStatus.Ready)?.replyReserve ?: 0
@@ -100,6 +109,22 @@ class ChatViewModel(
             c?.modelId?.let { id -> models.firstOrNull { it.id == id && !it.isSpeculativeHead } }
         }
 
+    /** The loaded model as saved (settings change without a reload), and how its template reasons. */
+    private val loadedModel =
+        combine(engine.state, library.observe().catch { emit(emptyList()) }) { engineState, models ->
+            (engineState as? InferenceEngine.State.Ready)?.let { ready -> models.firstOrNull { it.id == ready.model.id } ?: ready.model }
+        }
+
+    private val reasoning =
+        loadedModel
+            .map { model -> model?.let { it.id to library.settingsOf(it).load.chatTemplate } }
+            .distinctUntilChanged()
+            .mapLatest { key ->
+                val model = key?.let { library.get(it.first) } ?: return@mapLatest null
+                val custom = key.second
+                if (custom.isNotBlank()) reasoningOf(custom) else library.info(model)?.reasoning
+            }
+
     private val messages =
         conversationId.flatMapLatest { id -> if (id == null) flowOf(emptyList()) else repository.observeMessages(id) }
 
@@ -136,15 +161,25 @@ class ChatViewModel(
             )
         }
 
-    val state: StateFlow<ChatState> =
-        combine(stored, live, chatModel, keepCurrentModel, engine.state) { s, l, previous, keep, engineState ->
+    /** This chat's model when another is loaded, and the loaded model's reasoning. */
+    private val modelExtras =
+        combine(chatModel, keepCurrentModel, engine.state, loadedModel, reasoning) { previous, keep, engineState, loaded, reasons ->
             val current =
                 when (engineState) {
                     is InferenceEngine.State.Ready -> engineState.model.id
                     is InferenceEngine.State.Loading -> engineState.model.id
                     else -> null
                 }
-            val offer = previous?.takeIf { it.id != current && !keep && l.streaming == null && !l.busyElsewhere }
+            ModelExtras(
+                offer = previous?.takeIf { it.id != current && !keep },
+                reasoning = reasons,
+                thinking = loaded?.let { library.settingsOf(it).chat.thinking } ?: false,
+            )
+        }
+
+    val state: StateFlow<ChatState> =
+        combine(stored, live, modelExtras) { s, l, extras ->
+            val offer = extras.offer?.takeIf { l.streaming == null && !l.busyElsewhere }
             // Drop the held frame as soon as its saved message is in the list.
             // Replies are checkpointed while streaming, so the saved row can lag the live text.
             // Keep showing the live (or last live) text until the saved row has caught up.
@@ -158,6 +193,8 @@ class ChatViewModel(
                     visible.sumOf { estimateTokens(it.content) + TURN_OVERHEAD } +
                     (streaming?.let { estimateTokens(it.content + it.thinking.orEmpty()) + TURN_OVERHEAD } ?: 0)
             s.copy(
+                reasoning = extras.reasoning,
+                thinking = extras.thinking,
                 messages = visible,
                 model = l.model,
                 streaming = streaming,
@@ -259,6 +296,16 @@ class ChatViewModel(
         keepCurrentModel.value = true
     }
 
+    /** Flips reasoning for the loaded model; applies from the next message, no reload needed. */
+    fun toggleThinking() {
+        val model = (engine.state.value as? InferenceEngine.State.Ready)?.model ?: return
+        viewModelScope.launch {
+            val saved = library.get(model.id) ?: return@launch
+            val settings = library.settingsOf(saved)
+            library.updateSettings(saved.id, settings.copy(chat = settings.chat.copy(thinking = !settings.chat.thinking)))
+        }
+    }
+
     fun stop() {
         viewModelScope.launch { engine.stop() }
     }
@@ -286,6 +333,12 @@ class ChatViewModel(
         /** Template tokens around each message; matches fitToContext's allowance. */
         const val TURN_OVERHEAD = 8
     }
+
+    private data class ModelExtras(
+        val offer: ModelEntity?,
+        val reasoning: Reasoning?,
+        val thinking: Boolean,
+    )
 
     private data class LiveState(
         val model: ModelStatus,
