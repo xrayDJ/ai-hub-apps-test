@@ -1,5 +1,13 @@
 package app.sunflower.ui.chat
 
+import app.sunflower.ui.theme.lift
+import app.sunflower.ui.theme.PillShape
+import app.sunflower.ui.components.pressScale
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.runtime.remember
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.clickable
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -21,7 +29,6 @@ import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -62,17 +69,19 @@ fun Composer(
     val colors = MaterialTheme.colorScheme
     val canSend = ready && text.isNotBlank()
     val active = canSend || generating
-    val shape = RoundedCornerShape(28.dp)
-    val buttonScale by animateFloatAsState(if (active) 1f else 0.82f, Motion.bouncy(), label = "sendScale")
+    val buttonScale by animateFloatAsState(if (active) 1f else 0.82f, Motion.lively(), label = "sendScale")
+    val focus = remember { FocusRequester() }
     val container by animateColorAsState(if (active) colors.primary else colors.surfaceContainerHighest, Motion.enter(), label = "sendBg")
     val tint by animateColorAsState(if (active) colors.onPrimary else colors.onSurfaceVariant, Motion.enter(), label = "sendFg")
 
+    // Pressing anywhere on the box gives it a small elastic squish.
+    val source = remember { MutableInteractionSource() }
     Row(
         modifier
             .fillMaxWidth()
-            .clip(shape)
-            .background(colors.surfaceContainerHigh)
-            .border(1.dp, colors.outlineVariant, shape)
+            .pressScale(source, 0.985f)
+            .lift(PillShape)
+            .clickable(interactionSource = source, indication = null, onClickLabel = "Type a message") { focus.requestFocus() }
             .padding(start = 20.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.Bottom,
     ) {
@@ -97,7 +106,7 @@ fun Composer(
                 cursorBrush = SolidColor(colors.primary),
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                 maxLines = 6,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().focusRequester(focus),
             )
         }
         Spacer(Modifier.width(8.dp))
@@ -139,7 +148,8 @@ private fun ThinkToggle(
 ) {
     val colors = MaterialTheme.colorScheme
     val haptics = rememberHaptics()
-    val shape = RoundedCornerShape(50)
+    val shape = PillShape
+    val source = remember { MutableInteractionSource() }
     val background by animateColorAsState(if (on) colors.primary.copy(alpha = 0.16f) else Color.Transparent, Motion.enter(), label = "thinkBg")
     val border by animateColorAsState(if (on) colors.primary.copy(alpha = 0.5f) else colors.outlineVariant, Motion.enter(), label = "thinkBorder")
     val content by animateColorAsState(if (on) colors.primary else colors.onSurfaceVariant, Motion.enter(), label = "thinkFg")
@@ -151,10 +161,11 @@ private fun ThinkToggle(
             modifier
                 .height(44.dp)
                 .wrapContentHeight(Alignment.CenterVertically)
+                .pressScale(source, 0.9f)
                 .clip(shape)
                 .background(background)
                 .border(1.dp, border, shape)
-                .toggleable(value = on, role = Role.Switch) {
+                .toggleable(value = on, interactionSource = source, indication = null, role = Role.Switch) {
                     haptics.tick()
                     onToggle()
                 }.semantics { contentDescription = if (on) "Reasoning on" else "Reasoning off" }

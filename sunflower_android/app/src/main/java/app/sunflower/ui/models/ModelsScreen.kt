@@ -1,5 +1,8 @@
 package app.sunflower.ui.models
 
+import androidx.compose.ui.graphics.Color
+import app.sunflower.ui.theme.lift
+import app.sunflower.ui.theme.CardShape
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
@@ -241,16 +244,14 @@ private fun ModelCard(
     val mine = engine.modelId == model.id
     val loaded = mine && engine is InferenceEngine.State.Ready
     val busy = engine is InferenceEngine.State.Loading
-    val border by animateColorAsState(if (loaded) colors.primary else colors.outlineVariant, Motion.enter(), label = "cardBorder")
+    val ring by animateColorAsState(if (loaded) colors.primary.copy(alpha = 0.75f) else Color.Transparent, Motion.enter(), label = "cardRing")
     val backend = ModelSettings.fromJson(model.settings).load.backend
     val source = remember { MutableInteractionSource() }
 
     Column(
         modifier
             .fillMaxWidth()
-            .clip(MaterialTheme.shapes.large)
-            .background(colors.surfaceContainer)
-            .border(1.dp, border, MaterialTheme.shapes.large)
+            .lift(CardShape, ring = ring)
             .clickable(source, null, onClick = onToggle)
             .animateContentSize(Motion.snappy())
             .padding(18.dp),

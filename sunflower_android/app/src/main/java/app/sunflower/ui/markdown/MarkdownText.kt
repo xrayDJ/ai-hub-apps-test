@@ -1,5 +1,12 @@
 package app.sunflower.ui.markdown
 
+import androidx.compose.ui.graphics.takeOrElse
+import androidx.compose.runtime.withFrameMillis
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.MutableLongState
+import androidx.compose.runtime.CompositionLocalProvider
+import android.os.SystemClock
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -63,12 +70,39 @@ fun MarkdownText(
     markdown: String,
     modifier: Modifier = Modifier,
     color: Color = MaterialTheme.colorScheme.onBackground,
+    /** Text is still arriving: new words fade in as they land. */
+    live: Boolean = false,
 ) {
     val blocks = remember(markdown) { parseMarkdown(markdown) }
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        blocks.forEach { RenderBlock(it, color) }
+    val offsets = remember(blocks) { renderOffsets(blocks) }
+    // Text already there when this appears (history, or a reply reopened mid-stream) never fades.
+    val fade = remember { TextFade(offsets.total) }
+    val clock = remember { mutableLongStateOf(SystemClock.uptimeMillis()) }
+    if (live) fade.observe(offsets.total, SystemClock.uptimeMillis())
+    LaunchedEffect(offsets.total) {
+        // Tick only while something is fading.
+        while (true) {
+            withFrameMillis { }
+            val now = SystemClock.uptimeMillis()
+            clock.longValue = now
+            fade.prune(now)
+            if (!fade.active(now)) break
+        }
+    }
+    CompositionLocalProvider(LocalTextFade provides FadeContext(fade, offsets, clock)) {
+        Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            blocks.forEach { RenderBlock(it, color) }
+        }
     }
 }
+
+private class FadeContext(
+    val fade: TextFade,
+    val offsets: RenderOffsets,
+    val clock: MutableLongState,
+)
+
+private val LocalTextFade = compositionLocalOf<FadeContext?> { null }
 
 @Composable
 private fun RenderBlock(
@@ -142,11 +176,29 @@ private fun InlineText(
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
-    val text =
+    val base =
         remember(runs, colors) {
             buildAnnotatedString {
                 runs.forEach { run -> appendRun(run, colors.primary, colors.surfaceContainerHighest) }
             }
+        }
+    // Words that just arrived are drawn translucent, rising to full strength.
+    val context = LocalTextFade.current
+    val start = context?.offsets?.starts?.get(runs)
+    val text =
+        if (context != null && start != null && context.fade.touches(start, start + base.length)) {
+            val fading = context.fade.fading(start, start + base.length, context.clock.longValue)
+            if (fading.isEmpty()) {
+                base
+            } else {
+                val ink = color.takeOrElse { style.color.takeOrElse { colors.onBackground } }
+                buildAnnotatedString {
+                    append(base)
+                    fading.forEach { addStyle(SpanStyle(color = ink.copy(alpha = ink.alpha * it.alpha)), it.start - start, it.end - start) }
+                }
+            }
+        } else {
+            base
         }
     Text(text, style = style, color = color, modifier = modifier)
 }

@@ -22,13 +22,19 @@ object Motion {
     const val LONG = 520
 
     /** Press feedback: immediate, with a hint of bounce on release. */
-    fun <T> press() = spring<T>(dampingRatio = 0.5f, stiffness = 900f)
+    fun <T> press() = spring<T>(dampingRatio = 0.55f, stiffness = 700f)
 
     /** Layout and size changes: responsive without wobble. */
     fun <T> snappy() = spring<T>(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow)
 
     /** Playful moments (the flower blooming, a send landing). */
     fun <T> bouncy() = spring<T>(dampingRatio = 0.55f, stiffness = Spring.StiffnessLow)
+
+    /** The house spring: a quick response and a small, natural overshoot. */
+    fun <T> lively() = spring<T>(dampingRatio = 0.62f, stiffness = 380f)
+
+    /** Geometry that shouldn't wobble (a card growing into a screen). */
+    fun <T> soft() = spring<T>(dampingRatio = 1f, stiffness = 260f)
 
     fun <T> enter() = tween<T>(MEDIUM, easing = EaseOutQuint)
 

@@ -1,5 +1,8 @@
 package app.sunflower.ui.chat
 
+import androidx.compose.ui.graphics.Color
+import app.sunflower.ui.theme.lift
+import app.sunflower.ui.theme.CardShape
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -143,8 +146,7 @@ fun SystemPromptEditor(
                             Modifier
                                 .weight(1f)
                                 .fillMaxWidth()
-                                .clip(MaterialTheme.shapes.large)
-                                .background(colors.surfaceContainer)
+                                .lift(CardShape, elevation = 0.dp)
                                 .padding(18.dp),
                     )
                     AnimatedVisibility(
@@ -299,9 +301,7 @@ private fun PromptCard(
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(MaterialTheme.shapes.large)
-            .background(colors.surfaceContainer)
-            .border(1.dp, if (selected) colors.primary else colors.outlineVariant, MaterialTheme.shapes.large)
+            .lift(CardShape, elevation = 0.dp, ring = if (selected) colors.primary.copy(alpha = 0.75f) else Color.Unspecified)
             .clickable(onClick = onClick)
             .padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -348,8 +348,7 @@ private fun NameField(
     Row(
         modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(colors.surfaceContainerHigh)
+            .lift(CardShape, elevation = 0.dp)
             .padding(start = 14.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

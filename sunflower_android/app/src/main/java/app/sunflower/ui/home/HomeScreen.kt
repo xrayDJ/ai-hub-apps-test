@@ -2,38 +2,25 @@ package app.sunflower.ui.home
 
 import android.text.format.DateUtils
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.lazy.LazyListScope
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Search
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextAlign
-import app.sunflower.data.SearchHit
-import app.sunflower.ui.components.RenameField
-import androidx.compose.animation.core.animateFloatAsState
-import app.sunflower.ui.components.rememberHaptics
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.animation.togetherWith
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.fadeIn
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,44 +30,73 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.sunflower.data.SearchHit
 import app.sunflower.data.db.ConversationEntity
 import app.sunflower.data.displayName
 import app.sunflower.engine.GenieXRuntime
 import app.sunflower.engine.InferenceEngine
+import app.sunflower.ui.components.RenameField
 import app.sunflower.ui.components.SunButton
 import app.sunflower.ui.components.SunButtonStyle
 import app.sunflower.ui.components.SunIconButton
 import app.sunflower.ui.components.SunIcons
 import app.sunflower.ui.components.SunflowerMark
+import app.sunflower.ui.components.chatBounds
 import app.sunflower.ui.components.pressScale
+import app.sunflower.ui.components.rememberHaptics
+import app.sunflower.ui.theme.CardShape
 import app.sunflower.ui.theme.Motion
+import app.sunflower.ui.theme.PillShape
 import app.sunflower.ui.theme.SunflowerTheme
+import app.sunflower.ui.theme.lift
+import app.sunflower.ui.theme.rememberShimmer
 
 @Composable
 fun HomeScreen(
@@ -96,6 +112,7 @@ fun HomeScreen(
     onOpenSettings: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
+    val status = ModelStatus.of(state.runtime, state.engine)
     // One row at a time shows its actions, rename field or delete confirmation.
     var rowMode by remember { mutableStateOf<Pair<String, RowMode>?>(null) }
     BackHandler(enabled = state.query != null || rowMode != null) {
@@ -112,7 +129,7 @@ fun HomeScreen(
                 title,
                 style = MaterialTheme.typography.titleLarge,
                 color = colors.onBackground,
-                modifier = Modifier.padding(top = 26.dp, bottom = 4.dp).animateItem(),
+                modifier = Modifier.padding(start = 4.dp, top = 26.dp, bottom = 4.dp).animateItem(),
             )
         }
         items(conversations, key = { it.id }) { conversation ->
@@ -139,20 +156,32 @@ fun HomeScreen(
             )
         }
     }
+
+    // The warm light in the corner follows the model: full when one is ready, dim when none is.
+    val glow by animateFloatAsState(
+        when (status) {
+            is ModelStatus.Ready -> 1f
+            is ModelStatus.Loading, ModelStatus.Starting -> 0.6f
+            else -> 0.25f
+        },
+        tween(1400),
+        label = "glow",
+    )
+
     Box(
         Modifier
             .fillMaxSize()
             .background(colors.background),
     ) {
-        // A warm glow bleeding in from the top corner: the one flourish on an otherwise quiet screen.
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(420.dp)
+                .height(460.dp)
+                .graphicsLayer { alpha = glow }
                 .background(
                     Brush.radialGradient(
                         listOf(SunflowerTheme.extras.glow, Color.Transparent),
-                        center = androidx.compose.ui.geometry.Offset(900f, -120f),
+                        center = Offset(900f, -120f),
                         radius = 1100f,
                     ),
                 ),
@@ -160,11 +189,12 @@ fun HomeScreen(
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 120.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 128.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item(key = "header") {
                 Header(
+                    status = status,
                     onOpenModels = onOpenModels,
                     onOpenSettings = onOpenSettings,
                     onSearch = if (state.conversations.isNotEmpty() && state.query == null) ({ onQueryChange("") }) else null,
@@ -194,14 +224,11 @@ fun HomeScreen(
                     if (pinned.isNotEmpty()) section("Pinned", pinned)
                     if (recent.isNotEmpty()) section("Recent", recent)
                 }
+            } else if (state.storageError != null) {
+                item(key = "storage") { StorageRecovery(state.storageError, Modifier.padding(top = 24.dp)) { onResetStorage() } }
             } else {
-                item(key = "model") { ModelCard(state.runtime, state.engine, onOpenModels, Modifier.padding(top = 24.dp)) }
-                if (state.storageError != null) {
-                    item(key = "storage") { StorageRecovery(state.storageError, onResetStorage) }
-                } else {
-                    if (pinned.isNotEmpty()) section("Pinned", pinned)
-                    if (recent.isNotEmpty()) section("Recent", recent)
-                }
+                if (pinned.isNotEmpty()) section("Pinned", pinned)
+                if (recent.isNotEmpty()) section("Recent", recent)
             }
         }
 
@@ -213,113 +240,158 @@ fun HomeScreen(
                 Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
-                    .padding(bottom = 20.dp),
+                    .padding(bottom = 22.dp)
+                    .chatBounds("new", PillShape),
         )
+    }
+}
+
+/** What the home screen says about the model, in words rather than a coloured dot. */
+private sealed interface ModelStatus {
+    data object Starting : ModelStatus
+
+    data class RuntimeFailed(val reason: String) : ModelStatus
+
+    data object None : ModelStatus
+
+    data class Loading(val name: String, val backend: String) : ModelStatus
+
+    data class Ready(val name: String, val backend: String) : ModelStatus
+
+    data class Failed(val name: String) : ModelStatus
+
+    companion object {
+        fun of(
+            runtime: GenieXRuntime.State,
+            engine: InferenceEngine.State,
+        ): ModelStatus =
+            when {
+                runtime is GenieXRuntime.State.Failed -> RuntimeFailed(runtime.reason)
+                engine is InferenceEngine.State.Ready -> Ready(engine.model.displayName, engine.backend.label)
+                engine is InferenceEngine.State.Loading -> Loading(engine.model.displayName, engine.backend.label)
+                engine is InferenceEngine.State.Failed -> Failed(engine.model.displayName)
+                runtime == GenieXRuntime.State.Starting -> Starting
+                else -> None
+            }
     }
 }
 
 @Composable
 private fun Header(
+    status: ModelStatus,
     onOpenModels: () -> Unit,
     onOpenSettings: () -> Unit,
     onSearch: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier
-            .fillMaxWidth()
-            .padding(top = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        SunflowerMark(size = 34.dp)
-        Spacer(Modifier.width(10.dp))
-        Text("sunflower", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onBackground)
-        Spacer(Modifier.weight(1f))
-        if (onSearch != null) {
-            SunIconButton(Icons.Outlined.Search, "Search chats", onSearch)
-            Spacer(Modifier.width(8.dp))
+    Column(modifier.fillMaxWidth().padding(top = 12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Spacer(Modifier.width(4.dp))
+            SunflowerMark(
+                size = 34.dp,
+                spinning = status is ModelStatus.Loading || status == ModelStatus.Starting,
+                breathing = status is ModelStatus.Ready,
+                dormant = status == ModelStatus.None || status is ModelStatus.Failed || status is ModelStatus.RuntimeFailed,
+            )
+            Spacer(Modifier.width(10.dp))
+            Text("sunflower", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onBackground)
+            Spacer(Modifier.weight(1f))
+            if (onSearch != null) SunIconButton(Icons.Outlined.Search, "Search chats", onSearch)
+            SunIconButton(SunIcons.Layers, "Models", onOpenModels)
+            SunIconButton(Icons.Outlined.Settings, "Settings", onOpenSettings)
         }
-        SunIconButton(SunIcons.Layers, "Models", onOpenModels)
-        Spacer(Modifier.width(8.dp))
-        SunIconButton(Icons.Outlined.Settings, "Settings", onOpenSettings)
+        StatusLine(status, onOpenModels, Modifier.padding(start = 48.dp))
     }
 }
 
+/** One quiet line under the name: which model is ready and where, or what's happening. Tapping it opens Models. */
 @Composable
-private fun ModelCard(
-    runtime: GenieXRuntime.State,
-    engine: InferenceEngine.State,
+private fun StatusLine(
+    status: ModelStatus,
     onOpenModels: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
-    val status: String
-    var detail: String? = null
-    var ok = false
-    var busy = false
-    when {
-        runtime is GenieXRuntime.State.Failed -> {
-            status = "Runtime unavailable"
-            detail = runtime.reason
-        }
-        engine is InferenceEngine.State.Ready -> {
-            status = engine.model.displayName
-            detail = "Running on ${engine.backend.label}"
-            ok = true
-        }
-        engine is InferenceEngine.State.Loading -> {
-            status = engine.model.displayName
-            detail = "Loading on ${engine.backend.label}…"
-            busy = true
-        }
-        engine is InferenceEngine.State.Failed -> {
-            status = "Couldn't load ${engine.model.displayName}"
-        }
-        runtime == GenieXRuntime.State.Starting -> {
-            status = "Starting"
-            busy = true
-        }
-        else -> status = "No model loaded"
-    }
-    Row(
+    val style = MaterialTheme.typography.bodyMedium
+    Box(
         modifier
-            .fillMaxWidth()
-            .clip(MaterialTheme.shapes.extraLarge)
-            .background(colors.surfaceContainer)
-            .border(1.dp, colors.outlineVariant, MaterialTheme.shapes.extraLarge)
-            .padding(start = 20.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClickLabel = "Open models", onClick = onOpenModels)
+            .padding(vertical = 6.dp, horizontal = 2.dp),
     ) {
-        if (busy) SunflowerMark(size = 16.dp, spinning = true, bloom = false) else StatusDot(ok = ok, busy = false)
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(status, style = MaterialTheme.typography.titleMedium, color = colors.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (detail != null) {
-                Text(detail, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        AnimatedContent(
+            targetState = status,
+            contentKey = { it::class },
+            transitionSpec = { fadeIn(tween(320, delayMillis = 80)) togetherWith fadeOut(tween(160)) },
+            label = "status",
+        ) { current ->
+            when (current) {
+                is ModelStatus.Ready ->
+                    Row {
+                        Text(
+                            current.name,
+                            style = style.copy(fontWeight = FontWeight.Medium),
+                            color = colors.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false).drawnUnderline(colors.primary),
+                        )
+                        Text("  ·  ${current.backend}", style = style, color = colors.onSurfaceVariant, maxLines = 1)
+                    }
+                is ModelStatus.Loading ->
+                    Text(
+                        "Loading ${current.name} on ${current.backend}…",
+                        style = style.copy(brush = rememberShimmer(colors.onSurfaceVariant, colors.onSurface)),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                ModelStatus.Starting ->
+                    Text("Starting…", style = style.copy(brush = rememberShimmer(colors.onSurfaceVariant, colors.onSurface)))
+                is ModelStatus.Failed ->
+                    Row {
+                        Text(
+                            "Couldn't load ${current.name}",
+                            style = style,
+                            color = colors.error,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                        Text("  ·  Details", style = style, color = colors.onSurface, maxLines = 1)
+                    }
+                is ModelStatus.RuntimeFailed ->
+                    Column {
+                        Text("Runtime unavailable", style = style, color = colors.error)
+                        Text(current.reason, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                    }
+                ModelStatus.None ->
+                    Row {
+                        Text("No model  ·  ", style = style, color = colors.onSurfaceVariant)
+                        Text("Choose one", style = style.copy(fontWeight = FontWeight.Medium), color = colors.onSurface)
+                    }
             }
         }
-        SunButton("Models", onOpenModels, style = SunButtonStyle.Ghost)
     }
 }
 
-@Composable
-private fun StatusDot(
-    ok: Boolean,
-    busy: Boolean,
-) {
-    val colors = MaterialTheme.colorScheme
-    val alpha by animateFloatAsState(if (busy) 0.4f else 1f, Motion.snappy(), label = "dot")
-    Box(
-        Modifier
-            .size(10.dp)
-            .graphicsLayer { this.alpha = alpha }
-            .clip(CircleShape)
-            .background(if (ok) colors.tertiary else colors.primary),
-    )
-}
+/** A thin underline that draws itself in from the left when it first appears. */
+private fun Modifier.drawnUnderline(color: Color): Modifier =
+    composed {
+        val progress = remember { Animatable(0f) }
+        LaunchedEffect(Unit) { progress.animateTo(1f, Motion.lively()) }
+        padding(bottom = 3.dp).drawBehind {
+            val y = size.height + 2.dp.toPx()
+            val end = size.width * progress.value.coerceIn(0f, 1f)
+            drawLine(color, Offset(0f, y), Offset(end, y), strokeWidth = 1.5.dp.toPx())
+        }
+    }
 
 enum class RowMode { Plain, Actions, Renaming, ConfirmDelete }
 
+/**
+ * A chat in the list. A press sinks it slightly; a long press lifts it off the
+ * page and unfolds its actions underneath. Tapping grows it into the chat.
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ConversationRow(
@@ -336,81 +408,166 @@ private fun ConversationRow(
     val colors = MaterialTheme.colorScheme
     val haptics = rememberHaptics()
     val source = remember { MutableInteractionSource() }
-    Row(
-        modifier
-            .fillMaxWidth()
-            .pressScale(source, 0.98f)
-            .clip(MaterialTheme.shapes.large)
-            .background(colors.surfaceContainerLow)
-            .combinedClickable(
-                interactionSource = source,
-                indication = ripple(),
-                enabled = mode != RowMode.Renaming,
-                onClick = onClick,
-                onLongClick = {
-                    haptics.confirm()
-                    onLongClick()
-                },
-            ).padding(start = 18.dp, end = 8.dp, top = 10.dp, bottom = 10.dp)
-            .heightIn(min = 44.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        AnimatedContent(
-            targetState = mode,
-            transitionSpec = { fadeIn(Motion.enter()) togetherWith fadeOut(Motion.exit()) },
-            label = "rowMode",
-            modifier = Modifier.weight(1f),
-        ) { current ->
-            when (current) {
-                RowMode.Plain ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                conversation.title,
-                                style = MaterialTheme.typography.titleMedium,
-                                color = colors.onSurface,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            Text(
-                                conversation.modelName ?: "No model yet",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = colors.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.MiddleEllipsis,
-                            )
+    val pressed by source.collectIsPressedAsState()
+    val lifted = mode != RowMode.Plain
+    val scale by animateFloatAsState(
+        when {
+            lifted -> 1.02f
+            pressed -> 0.975f
+            else -> 1f
+        },
+        Motion.lively(),
+        label = "rowScale",
+    )
+    val raise by animateFloatAsState(if (lifted) 1f else 0f, Motion.lively(), label = "rowRaise")
+    val elevation by animateDpAsState(if (lifted) 22.dp else 10.dp, Motion.lively(), label = "rowElevation")
+    Column(modifier.fillMaxWidth()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .chatBounds(conversation.id, CardShape)
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                    translationY = -3.dp.toPx() * raise
+                }.lift(CardShape, elevation = elevation)
+                .combinedClickable(
+                    interactionSource = source,
+                    indication = null,
+                    onClick = onClick,
+                    onLongClickLabel = "Chat options",
+                    onLongClick = {
+                        haptics.confirm()
+                        onLongClick()
+                    },
+                ).heightIn(min = 68.dp)
+                .padding(horizontal = 18.dp, vertical = 13.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    AnimatedVisibility(
+                        visible = conversation.pinned,
+                        enter = fadeIn(Motion.enter()) + expandHorizontallyFromStart(),
+                        exit = fadeOut(Motion.exit()) + shrinkHorizontallyToStart(),
+                    ) {
+                        PetalGlyph(Modifier.padding(end = 7.dp))
+                    }
+                    Text(
+                        conversation.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = colors.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Text(
+                    conversation.modelName ?: "No model yet",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.MiddleEllipsis,
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Text(relativeTime(conversation.updatedAt), style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
+        }
+
+        AnimatedVisibility(
+            visible = lifted,
+            enter = expandVertically(Motion.lively()) + fadeIn(tween(220)),
+            exit = shrinkVertically(Motion.soft()) + fadeOut(tween(160)),
+        ) {
+            AnimatedContent(
+                targetState = mode,
+                transitionSpec = { fadeIn(Motion.enter()) togetherWith fadeOut(Motion.exit()) },
+                label = "rowOptions",
+                modifier = Modifier.padding(top = 8.dp),
+            ) { current ->
+                when (current) {
+                    RowMode.Renaming ->
+                        RenameField(
+                            conversation.title,
+                            onRename,
+                            onCancel = { onMode(null) },
+                            modifier = Modifier.padding(start = 18.dp, end = 4.dp),
+                        )
+                    RowMode.ConfirmDelete ->
+                        Row(Modifier.padding(start = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text("Delete this chat?", style = MaterialTheme.typography.titleSmall, color = colors.onSurface, modifier = Modifier.weight(1f))
+                            SunButton("Cancel", { onMode(null) }, style = SunButtonStyle.Ghost)
+                            SunButton("Delete", onDelete, style = SunButtonStyle.Tonal)
                         }
-                        Spacer(Modifier.width(12.dp))
-                        Text(
-                            relativeTime(conversation.updatedAt),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = colors.onSurfaceVariant,
-                            modifier = Modifier.padding(end = 10.dp),
-                        )
-                    }
-                RowMode.Actions ->
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                        SunButton(if (conversation.pinned) "Unpin" else "Pin", onPin, style = SunButtonStyle.Ghost)
-                        SunButton("Rename", { onMode(RowMode.Renaming) }, style = SunButtonStyle.Ghost)
-                        SunButton("Delete", { onMode(RowMode.ConfirmDelete) }, style = SunButtonStyle.Ghost)
-                        Spacer(Modifier.weight(1f))
-                        SunIconButton(Icons.Outlined.Close, "Close", { onMode(null) }, size = 40.dp, container = Color.Transparent)
-                    }
-                RowMode.Renaming -> RenameField(conversation.title, onRename, onCancel = { onMode(null) })
-                RowMode.ConfirmDelete ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            "Delete this chat?",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = colors.onSurface,
-                            modifier = Modifier.weight(1f),
-                        )
-                        SunButton("Cancel", { onMode(null) }, style = SunButtonStyle.Ghost)
-                        SunButton("Delete", onDelete, style = SunButtonStyle.Tonal)
-                    }
+                    else ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            RowAction(if (conversation.pinned) "Unpin" else "Pin", onPin)
+                            RowAction("Rename", { onMode(RowMode.Renaming) })
+                            RowAction("Delete", { onMode(RowMode.ConfirmDelete) }, color = colors.error)
+                            Spacer(Modifier.weight(1f))
+                            SunIconButton(Icons.Outlined.Close, "Close", { onMode(null) }, size = 40.dp)
+                        }
+                }
             }
         }
     }
+}
+
+private fun expandHorizontallyFromStart() = androidx.compose.animation.expandHorizontally(Motion.lively(), expandFrom = Alignment.Start)
+
+private fun shrinkHorizontallyToStart() = androidx.compose.animation.shrinkHorizontally(Motion.soft(), shrinkTowards = Alignment.Start)
+
+/** A text action under a lifted row. */
+@Composable
+private fun RowAction(
+    text: String,
+    onClick: () -> Unit,
+    color: Color = MaterialTheme.colorScheme.onSurface,
+) {
+    val source = remember { MutableInteractionSource() }
+    val haptics = rememberHaptics()
+    val pressed by source.collectIsPressedAsState()
+    val touch by animateColorAsState(
+        if (pressed) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.07f) else Color.Transparent,
+        Motion.enter(),
+        label = "actionTouch",
+    )
+    Text(
+        text,
+        style = MaterialTheme.typography.labelLarge,
+        color = color,
+        modifier =
+            Modifier
+                .pressScale(source, 0.92f)
+                .clip(PillShape)
+                .background(touch)
+                .clickable(interactionSource = source, indication = null, role = Role.Button) {
+                    haptics.tick()
+                    onClick()
+                }.heightIn(min = 44.dp)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+    )
+}
+
+/** A single petal: marks a pinned chat. */
+@Composable
+private fun PetalGlyph(modifier: Modifier = Modifier) {
+    val petal = SunflowerTheme.extras.petalOuter
+    Box(
+        modifier
+            .size(width = 9.dp, height = 13.dp)
+            .drawBehind {
+                val w = size.width
+                val h = size.height
+                val path =
+                    Path().apply {
+                        moveTo(w / 2f, 0f)
+                        cubicTo(w * 1.05f, h * 0.28f, w * 1.05f, h * 0.72f, w / 2f, h)
+                        cubicTo(-w * 0.05f, h * 0.72f, -w * 0.05f, h * 0.28f, w / 2f, 0f)
+                        close()
+                    }
+                drawPath(path, petal)
+            },
+    )
 }
 
 @Composable
@@ -422,13 +579,10 @@ private fun SearchField(
     val colors = MaterialTheme.colorScheme
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { focus.requestFocus() }
-    val shape = RoundedCornerShape(28.dp)
     Row(
         modifier
             .fillMaxWidth()
-            .clip(shape)
-            .background(colors.surfaceContainerHigh)
-            .border(1.dp, colors.outlineVariant, shape)
+            .lift(PillShape)
             .padding(start = 18.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -448,7 +602,7 @@ private fun SearchField(
                 modifier = Modifier.fillMaxWidth().focusRequester(focus),
             )
         }
-        SunIconButton(Icons.Outlined.Close, "Close search", { onQueryChange(null) }, container = Color.Transparent)
+        SunIconButton(Icons.Outlined.Close, "Close search", { onQueryChange(null) })
     }
 }
 
@@ -463,10 +617,10 @@ private fun SearchResultRow(
     Column(
         modifier
             .fillMaxWidth()
-            .pressScale(source, 0.98f)
-            .clip(MaterialTheme.shapes.large)
-            .background(colors.surfaceContainerLow)
-            .clickable(interactionSource = source, indication = ripple(), onClick = onClick)
+            .chatBounds(hit.conversation.id, CardShape)
+            .pressScale(source, 0.975f)
+            .lift(CardShape)
+            .clickable(interactionSource = source, indication = null, onClick = onClick)
             .padding(horizontal = 18.dp, vertical = 12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -508,15 +662,16 @@ private fun relativeTime(time: Long): String =
 @Composable
 private fun StorageRecovery(
     error: String,
+    modifier: Modifier = Modifier,
     onReset: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
     var confirming by remember { mutableStateOf(false) }
     Column(
-        Modifier
+        modifier
             .fillMaxWidth()
-            .clip(MaterialTheme.shapes.large)
-            .border(1.dp, colors.error.copy(alpha = 0.5f), MaterialTheme.shapes.large)
+            .clip(CardShape)
+            .border(1.dp, colors.error.copy(alpha = 0.5f), CardShape)
             .padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -536,21 +691,5 @@ private fun StorageRecovery(
         } else {
             SunButton("Reset storage", { confirming = true }, style = SunButtonStyle.Tonal)
         }
-    }
-}
-
-@Composable
-private fun Notice(text: String) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(MaterialTheme.shapes.large)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.large)
-            .padding(18.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(SunIcons.Lock, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-        Spacer(Modifier.width(12.dp))
-        Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

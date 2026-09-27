@@ -1,5 +1,7 @@
 package app.sunflower.ui.settings
 
+import app.sunflower.ui.theme.lift
+import app.sunflower.ui.theme.CardShape
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -88,8 +90,7 @@ fun SettingSection(
         Column(
             Modifier
                 .fillMaxWidth()
-                .clip(MaterialTheme.shapes.large)
-                .background(MaterialTheme.colorScheme.surfaceContainer)
+                .lift(CardShape)
                 .padding(horizontal = 16.dp, vertical = 4.dp),
         ) { content() }
     }

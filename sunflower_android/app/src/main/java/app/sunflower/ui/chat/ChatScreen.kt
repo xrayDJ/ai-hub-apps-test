@@ -1,5 +1,19 @@
 package app.sunflower.ui.chat
 
+import app.sunflower.ui.theme.rememberShimmer
+import app.sunflower.ui.theme.lift
+import app.sunflower.ui.theme.SunflowerTheme
+import app.sunflower.ui.theme.SmoothCornerShape
+import app.sunflower.ui.theme.CardShape
+import app.sunflower.ui.components.chatBounds
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.animation.core.Animatable
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import app.sunflower.ui.theme.MonoFamily
@@ -122,6 +136,8 @@ fun ChatScreen(
     onOpenModels: () -> Unit,
     onOpenSettings: (modelId: String) -> Unit,
     promptActions: PromptLibraryActions,
+    /** Shared with this chat's row on the home screen, which grows into it. */
+    boundsKey: String = "new",
 ) {
     val colors = MaterialTheme.colorScheme
     val haptics = rememberHaptics()
@@ -147,6 +163,21 @@ fun ChatScreen(
     }
     val listState = rememberLazyListState()
     val lastUserId = state.messages.lastOrNull { it.role == ConversationRepository.ROLE_USER }?.id
+    // A message the user just sent rises out of the message box into place.
+    var riseArmed by remember { mutableStateOf(false) }
+    var riseAfter by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(lastUserId) {
+        if (riseArmed && lastUserId != riseAfter) {
+            delay(1_000)
+            riseArmed = false
+        }
+    }
+    // Flipping versions slides the new one in from the side it was pulled from.
+    var versionFlip by remember { mutableIntStateOf(0) }
+    val flipVersion: (Int) -> Unit = { dir ->
+        versionFlip = dir
+        onVersion(dir)
+    }
     val lastId = state.messages.lastOrNull()?.id
     val showStreaming = state.streaming?.let { live -> state.messages.none { it.id == live.messageId } } == true
     val itemCount = state.messages.size + if (showStreaming) 1 else 0
@@ -179,9 +210,17 @@ fun ChatScreen(
         if (following && itemCount > 0) listState.scrollToItem(itemCount - 1, Int.MAX_VALUE)
     }
 
+    LaunchedEffect(lastId) {
+        if (versionFlip != 0) {
+            delay(150)
+            versionFlip = 0
+        }
+    }
+
     Box(
         Modifier
             .fillMaxSize()
+            .chatBounds(boundsKey, CardShape)
             .background(colors.background),
     ) {
         Column(Modifier.fillMaxSize().imePadding()) {
@@ -249,6 +288,7 @@ fun ChatScreen(
                                 val canEdit = message.id == lastUserId && state.canSend
                                 UserMessage(
                                     text = message.content,
+                                    rise = riseArmed && message.id == lastUserId && message.id != riseAfter,
                                     showActions = selectedId == message.id,
                                     onTap = toggle,
                                     onCopy = copy,
@@ -278,7 +318,8 @@ fun ChatScreen(
                                     onCopy = copy,
                                     onRegenerate = if (isLast && state.canSend) onRegenerate else null,
                                     versions = state.versions?.takeIf { isLast && !state.generating },
-                                    onVersion = onVersion,
+                                    onVersion = flipVersion,
+                                    enterFrom = if (isLast) versionFlip else 0,
                                     modifier = Modifier.messageAnimation(this).then(glowModifier),
                                 )
                             }
@@ -319,7 +360,7 @@ fun ChatScreen(
                             scope.launch { listState.animateScrollToItem(itemCount - 1, 0) }
                         },
                         size = 40.dp,
-                        container = colors.surfaceContainerHighest,
+                        modifier = Modifier.lift(CircleShape, elevation = 8.dp),
                     )
                 }
             }
@@ -371,6 +412,8 @@ fun ChatScreen(
                 text = input,
                 onTextChange = { input = it },
                 onSend = {
+                    riseAfter = lastUserId
+                    riseArmed = true
                     askForNotificationsOnce()
                     val editing = editingId
                     if (editing != null) onEdit(editing, input) else onSend(input)
@@ -476,24 +519,41 @@ private fun EmptyChat(modifier: Modifier = Modifier) {
 @Composable
 private fun UserMessage(
     text: String,
+    /** Just sent: rises out of the message box instead of appearing in place. */
+    rise: Boolean,
     showActions: Boolean,
     onTap: () -> Unit,
     onCopy: () -> Unit,
     onEdit: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
-    val colors = MaterialTheme.colorScheme
-    Column(modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
+    val extras = SunflowerTheme.extras
+    // 1 = still down at the message box, 0 = in place.
+    val travel = remember { Animatable(if (rise) 1f else 0f) }
+    LaunchedEffect(Unit) { if (travel.value > 0f) travel.animateTo(0f, Motion.lively()) }
+    Column(
+        modifier
+            .fillMaxWidth()
+            .graphicsLayer {
+                val t = travel.value
+                translationY = t * 110.dp.toPx()
+                val scale = 1f - 0.1f * t
+                scaleX = scale
+                scaleY = scale
+                alpha = 1f - 0.75f * t.coerceIn(0f, 1f)
+                transformOrigin = TransformOrigin(1f, 1f)
+            },
+        horizontalAlignment = Alignment.End,
+    ) {
         SelectionContainer {
             Text(
                 text,
                 style = MaterialTheme.typography.bodyLarge,
-                color = colors.onPrimaryContainer,
+                color = extras.onBubble,
                 modifier =
                     Modifier
                         .widthIn(max = 320.dp)
-                        .clip(RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp, bottomStart = 22.dp, bottomEnd = 6.dp))
-                        .background(colors.primaryContainer)
+                        .lift(BubbleShape, elevation = 0.dp, color = extras.bubble)
                         .clickable(onClick = onTap)
                         .padding(horizontal = 16.dp, vertical = 11.dp),
             )
@@ -521,18 +581,80 @@ private fun AssistantMessage(
     modifier: Modifier = Modifier,
     versions: Versions? = null,
     onVersion: (Int) -> Unit = {},
+    /** A version just flipped to: slides in from the right (1) or left (-1). */
+    enterFrom: Int = 0,
 ) {
     val colors = MaterialTheme.colorScheme
+    val density = LocalDensity.current
+    val scope = rememberCoroutineScope()
+    val haptics = rememberHaptics()
+    val shift = remember { Animatable(enterFrom * with(density) { 72.dp.toPx() }) }
+    val shown = remember { Animatable(if (enterFrom != 0) 0f else 1f) }
+    LaunchedEffect(Unit) {
+        if (enterFrom != 0) {
+            launch { shown.animateTo(1f, tween(320)) }
+            shift.animateTo(0f, Motion.lively())
+        }
+    }
+    // Swiping the latest reply sideways flips between its versions, with resistance past the ends.
+    val swipe =
+        if (versions == null) {
+            Modifier
+        } else {
+            Modifier.pointerInput(versions) {
+                val threshold = 56.dp.toPx()
+                fun settle() {
+                    scope.launch { shift.animateTo(0f, Motion.lively()) }
+                }
+                detectHorizontalDragGestures(
+                    onDragEnd = {
+                        val dir =
+                            when {
+                                shift.value < -threshold -> 1
+                                shift.value > threshold -> -1
+                                else -> 0
+                            }
+                        if (dir != 0 && versions.index + dir in 0 until versions.count) {
+                            haptics.tick()
+                            onVersion(dir)
+                            // Should the flip not happen after all, come back.
+                            scope.launch {
+                                delay(700)
+                                shift.animateTo(0f, Motion.lively())
+                            }
+                        } else {
+                            settle()
+                        }
+                    },
+                    onDragCancel = { settle() },
+                ) { change, amount ->
+                    change.consume()
+                    val next = shift.value + amount
+                    val dir = if (next < 0) 1 else -1
+                    val resistance = if (versions.index + dir in 0 until versions.count) 0.6f else 0.18f
+                    scope.launch { shift.snapTo(shift.value + amount * resistance) }
+                }
+            }
+        }
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
         SunflowerMark(size = 24.dp, spinning = working, bloom = false, modifier = Modifier.padding(top = 1.dp))
         Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(
+            Modifier
+                .weight(1f)
+                .then(swipe)
+                .graphicsLayer {
+                    translationX = shift.value
+                    alpha = shown.value
+                },
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             if (!thinking.isNullOrBlank() || thinkingOpen) {
                 ThinkingBlock(thinking.orEmpty(), live = thinkingOpen, startedAt = thinkingStartedAt, durationMs = thinkingMs)
             }
             if (content.isNotEmpty()) {
                 SelectionContainer {
-                    MarkdownText(content, Modifier.clickable(interactionSource = null, indication = null, onClick = onTap))
+                    MarkdownText(content, Modifier.clickable(interactionSource = null, indication = null, onClick = onTap), live = working)
                 }
             }
             if (stats != null && !showActions) {
@@ -659,7 +781,11 @@ private fun ThinkingBlock(
                 .padding(vertical = 4.dp, horizontal = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(header, style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
+            if (live) {
+                Text(header, style = MaterialTheme.typography.labelMedium.copy(brush = rememberShimmer(colors.onSurfaceVariant, colors.onSurface)))
+            } else {
+                Text(header, style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
+            }
             Spacer(Modifier.width(4.dp))
             Icon(SunIcons.ChevronDown, null, tint = colors.onSurfaceVariant, modifier = Modifier.size(16.dp).rotate(rotation))
         }
@@ -690,8 +816,8 @@ private fun ThinkingBlock(
                 modifier =
                     Modifier
                         .padding(top = 6.dp)
-                        .border(width = 1.dp, color = colors.outlineVariant, shape = RoundedCornerShape(12.dp))
-                        .padding(12.dp),
+                        .lift(CardShape, elevation = 0.dp)
+                        .padding(14.dp),
             )
         }
     }
@@ -715,3 +841,6 @@ private fun statsLine(message: MessageEntity): String? {
     return parts.joinToString("  ·  ")
 }
 
+
+/** The user's bubble: soft all round, a little tighter at the corner nearest the message box. */
+private val BubbleShape = SmoothCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomEnd = 7.dp, bottomStart = 20.dp)

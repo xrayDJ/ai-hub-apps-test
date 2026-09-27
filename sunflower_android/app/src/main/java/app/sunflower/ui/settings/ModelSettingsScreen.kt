@@ -1,5 +1,8 @@
 package app.sunflower.ui.settings
 
+import androidx.compose.ui.graphics.Color
+import app.sunflower.ui.theme.lift
+import app.sunflower.ui.theme.CardShape
 import android.text.format.Formatter
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -627,8 +630,7 @@ private fun LoadStatusCard(
         Modifier
             .fillMaxWidth()
             .padding(top = 12.dp)
-            .clip(MaterialTheme.shapes.large)
-            .border(1.dp, if (loaded != null) colors.primary else colors.outlineVariant, MaterialTheme.shapes.large)
+            .lift(CardShape, ring = if (loaded != null) colors.primary.copy(alpha = 0.75f) else Color.Unspecified)
             .padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -701,8 +703,7 @@ private fun InfoCard(text: String) {
         Modifier
             .fillMaxWidth()
             .padding(top = 12.dp)
-            .clip(MaterialTheme.shapes.large)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.large)
+            .lift(CardShape, elevation = 0.dp)
             .padding(16.dp),
     ) {
         Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

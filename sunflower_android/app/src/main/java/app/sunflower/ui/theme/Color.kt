@@ -99,9 +99,44 @@ data class SunflowerExtras(
     val seed: Color,
     val seedHighlight: Color,
     val glow: Color,
+    /** Raised surfaces: a faint vertical fall of light, a lit top edge and a soft shadow. */
+    val liftTop: Color,
+    val liftBottom: Color,
+    val liftEdge: Color,
+    val shadow: Color,
+    /** The user's own messages. */
+    val bubble: Color,
+    val onBubble: Color,
 )
 
-val DarkExtras = SunflowerExtras(Sunflower, Marigold, SeedBrown, SeedHighlight, Sunflower.copy(alpha = 0.18f))
-val LightExtras = SunflowerExtras(Color(0xFFF2B200), Color(0xFFE56F00), SeedBrown, SeedHighlight, Color(0xFFF2B200).copy(alpha = 0.22f))
+val DarkExtras =
+    SunflowerExtras(
+        petalOuter = Sunflower,
+        petalInner = Marigold,
+        seed = SeedBrown,
+        seedHighlight = SeedHighlight,
+        glow = Sunflower.copy(alpha = 0.18f),
+        liftTop = Color(0xFF1C1915),
+        liftBottom = Color(0xFF15130F),
+        liftEdge = Color(0x17FFECC8),
+        shadow = Color.Black,
+        bubble = Color(0xFF2A2318),
+        onBubble = Color(0xFFFBEFD6),
+    )
+
+val LightExtras =
+    SunflowerExtras(
+        petalOuter = Color(0xFFF2B200),
+        petalInner = Color(0xFFE56F00),
+        seed = SeedBrown,
+        seedHighlight = SeedHighlight,
+        glow = Color(0xFFF2B200).copy(alpha = 0.22f),
+        liftTop = Color(0xFFFFFDF8),
+        liftBottom = Color(0xFFF7F1E4),
+        liftEdge = Color(0xE6FFFFFF),
+        shadow = Color(0xFF5C4A2A),
+        bubble = Color(0xFFF1E4C8),
+        onBubble = Color(0xFF1B170F),
+    )
 
 val LocalSunflowerExtras = staticCompositionLocalOf { DarkExtras }
