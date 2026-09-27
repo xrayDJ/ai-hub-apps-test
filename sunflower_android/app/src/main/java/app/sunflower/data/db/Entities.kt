@@ -53,6 +53,12 @@ data class MessageEntity(
     val speedupVsPlain: Double? = null,
     /** How long the model reasoned before answering. */
     val thinkingMs: Long? = null,
+    /** Groups a user message with its reply; versions of one exchange share it. Null for chats from before versions. */
+    val turnId: String? = null,
+    /** Which version of the exchange this belongs to, from 0. */
+    @ColumnInfo(defaultValue = "0") val variant: Int = 0,
+    /** Part of the version on screen (and sent to the model). */
+    @ColumnInfo(defaultValue = "1") val active: Boolean = true,
 )
 
 @Entity(tableName = "system_prompts")

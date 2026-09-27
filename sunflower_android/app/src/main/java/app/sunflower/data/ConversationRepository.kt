@@ -3,6 +3,7 @@ package app.sunflower.data
 import app.sunflower.data.db.ConversationEntity
 import app.sunflower.data.db.MessageEntity
 import app.sunflower.data.db.SunflowerDatabase
+import androidx.room.withTransaction
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
@@ -19,8 +20,9 @@ class ConversationRepository(
     fun observeConversation(id: String): Flow<ConversationEntity?> =
         flow { emitAll(database().conversations().observe(id)) }
 
+    /** Every message, including versions of the last exchange that aren't on screen. */
     fun observeMessages(conversationId: String): Flow<List<MessageEntity>> =
-        flow { emitAll(database().messages().observe(conversationId)) }
+        flow { emitAll(database().messages().observeAll(conversationId)) }
 
     suspend fun createConversation(systemPrompt: String): String {
         val now = System.currentTimeMillis()
@@ -44,15 +46,21 @@ class ConversationRepository(
     ) {
         val db = database()
         val now = System.currentTimeMillis()
-        db.messages().upsert(
-            MessageEntity(
-                id = UUID.randomUUID().toString(),
-                conversationId = conversationId,
-                role = ROLE_USER,
-                content = text,
-                createdAt = now,
-            ),
-        )
+        val id = UUID.randomUUID().toString()
+        db.withTransaction {
+            // Moving on settles the previous exchange: the versions not picked go.
+            db.messages().deleteInactive(conversationId)
+            db.messages().upsert(
+                MessageEntity(
+                    id = id,
+                    conversationId = conversationId,
+                    role = ROLE_USER,
+                    content = text,
+                    createdAt = now,
+                    turnId = id,
+                ),
+            )
+        }
         val conversation = db.conversations().get(conversationId) ?: return
         val title = if (conversation.title == "New chat") titleFrom(text) else conversation.title
         db.conversations().upsert(conversation.copy(title = title, updatedAt = now))
@@ -90,9 +98,53 @@ class ConversationRepository(
         dao.upsert(conversation.copy(systemPrompt = systemPrompt))
     }
 
-    suspend fun deleteMessage(id: String) = database().messages().delete(id)
+    /**
+     * Starts a new version of the last exchange, keeping the current one to flip back to:
+     * the last user message is repeated ([editedText] replaces it when editing) and the
+     * old message and reply are set aside. Returns false when there is nothing to reply to.
+     */
+    suspend fun newVersion(
+        conversationId: String,
+        editedText: String? = null,
+    ): Boolean {
+        val db = database()
+        val dao = db.messages()
+        return db.withTransaction {
+            val visible = dao.list(conversationId)
+            val lastUser = visible.indexOfLast { it.role == ROLE_USER }
+            if (lastUser < 0) return@withTransaction false
+            val user = visible[lastUser]
+            val after = visible.drop(lastUser + 1)
+            // A failed reply leaves nothing to keep: just answer again.
+            if (editedText == null && after.isEmpty()) return@withTransaction true
+            val turnId = user.turnId ?: user.id
+            if (user.turnId == null || after.any { it.turnId == null }) {
+                dao.upsertAll((listOf(user) + after).map { it.copy(turnId = turnId) })
+            }
+            val next = dao.turn(conversationId, turnId).maxOf { it.variant } + 1
+            dao.selectVariant(conversationId, turnId, variant = -1)
+            val now = System.currentTimeMillis()
+            dao.upsert(
+                user.copy(
+                    id = UUID.randomUUID().toString(),
+                    content = editedText ?: user.content,
+                    createdAt = now,
+                    turnId = turnId,
+                    variant = next,
+                    active = true,
+                ),
+            )
+            db.conversations().get(conversationId)?.let { db.conversations().upsert(it.copy(updatedAt = now)) }
+            true
+        }
+    }
 
-    suspend fun deleteFrom(message: MessageEntity) = database().messages().deleteFrom(message.conversationId, message.createdAt)
+    /** Shows another version of the last exchange. */
+    suspend fun selectVersion(
+        conversationId: String,
+        turnId: String,
+        variant: Int,
+    ) = database().messages().selectVariant(conversationId, turnId, variant)
 
     suspend fun deleteConversation(id: String) = database().conversations().delete(id)
 

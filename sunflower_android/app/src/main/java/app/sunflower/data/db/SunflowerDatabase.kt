@@ -11,7 +11,7 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
 @Database(
     entities = [ConversationEntity::class, MessageEntity::class, SystemPromptEntity::class, ModelEntity::class],
-    version = 8,
+    version = 9,
     exportSchema = true,
 )
 abstract class SunflowerDatabase : RoomDatabase() {
@@ -39,7 +39,7 @@ abstract class SunflowerDatabase : RoomDatabase() {
             return Room
                 .databaseBuilder(context.applicationContext, SunflowerDatabase::class.java, FILE_NAME)
                 .openHelperFactory(factory)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
                 .addCallback(
                     object : RoomDatabase.Callback() {
                         override fun onOpen(db: SupportSQLiteDatabase) {
@@ -113,6 +113,16 @@ abstract class SunflowerDatabase : RoomDatabase() {
             object : Migration(7, 8) {
                 override fun migrate(db: SupportSQLiteDatabase) {
                     db.execSQL("ALTER TABLE `conversations` ADD COLUMN `modelId` TEXT")
+                }
+            }
+
+        /** v9: several versions of the last exchange (regenerate, edit), one shown at a time. */
+        private val MIGRATION_8_9 =
+            object : Migration(8, 9) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL("ALTER TABLE `messages` ADD COLUMN `turnId` TEXT")
+                    db.execSQL("ALTER TABLE `messages` ADD COLUMN `variant` INTEGER NOT NULL DEFAULT 0")
+                    db.execSQL("ALTER TABLE `messages` ADD COLUMN `active` INTEGER NOT NULL DEFAULT 1")
                 }
             }
 

@@ -507,6 +507,9 @@ class InferenceEngine(
                     draftTokens = profile?.draftNTotal?.takeIf { it > 0 },
                     draftAccepted = profile?.draftNAccepted?.takeIf { (profile?.draftNTotal ?: 0) > 0 },
                     thinkingMs = thinkingMs ?: thinkingStartedAt?.let { SystemClock.elapsedRealtime() - it },
+                    // The reply joins the version of the exchange it answers.
+                    turnId = history.lastOrNull()?.let { it.turnId ?: it.id },
+                    variant = history.lastOrNull()?.variant ?: 0,
                 )
             }
 

@@ -136,6 +136,7 @@ fun SunflowerNavHost(
                 onKeepCurrentModel = vm::keepCurrentModel,
                 onToggleThinking = vm::toggleThinking,
                 onRename = vm::rename,
+                onVersion = vm::showVersion,
                 focusMessageId = route.messageId,
                 onSystemPromptChange = vm::setSystemPrompt,
                 onBack = { nav.popBackStack() },

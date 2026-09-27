@@ -35,6 +35,25 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
+/** Versions of the last exchange: [index] of [variants] is on screen. */
+data class Versions(
+    val turnId: String,
+    val variants: List<Int>,
+    val index: Int,
+) {
+    val count: Int get() = variants.size
+}
+
+/** Visible messages, and the versions of the last exchange when there is more than one. */
+fun versionsOf(all: List<MessageEntity>): Pair<List<MessageEntity>, Versions?> {
+    val visible = all.filter { it.active }
+    val last = visible.lastOrNull() ?: return visible to null
+    val turnId = last.turnId ?: return visible to null
+    val variants = all.filter { it.turnId == turnId }.map { it.variant }.distinct().sorted()
+    if (variants.size < 2) return visible to null
+    return visible to Versions(turnId, variants, variants.indexOf(last.variant).coerceAtLeast(0))
+}
+
 /** How the loaded model looks from inside a chat. */
 sealed interface ModelStatus {
     data object None : ModelStatus
@@ -70,6 +89,7 @@ data class ChatState(
     val reasoning: Reasoning? = null,
     /** The loaded model's "reason before answering" setting. */
     val thinking: Boolean = false,
+    val versions: Versions? = null,
 ) {
     val contextSize: Int? get() = (model as? ModelStatus.Ready)?.contextSize
     val replyReserve: Int get() = (model as? ModelStatus.Ready)?.replyReserve ?: 0
@@ -130,9 +150,11 @@ class ChatViewModel(
 
     private val stored =
         combine(conversation, messages, draftSystemPrompt, prompts.observe().catch { emit(emptyList()) }) { c: ConversationEntity?, m, draft, library ->
+            val (visible, versions) = versionsOf(m)
             ChatState(
                 title = c?.title ?: "New chat",
-                messages = m,
+                messages = visible,
+                versions = versions,
                 systemPrompt = c?.systemPrompt ?: draft,
                 promptLibrary = library,
             )
@@ -246,19 +268,26 @@ class ChatViewModel(
         }
     }
 
-    /** Replaces the last reply with a fresh one. */
+    /** Writes another version of the last reply; the current one stays one tap away. */
     fun regenerate() {
         val id = conversationId.value ?: return
         if (!state.value.canSend) return
         engine.dismissFailure()
         viewModelScope.launch {
-            val last = repository.messages(id).lastOrNull() ?: return@launch
-            if (last.role == ConversationRepository.ROLE_ASSISTANT) repository.deleteMessage(last.id)
-            startReply(id)
+            if (repository.newVersion(id)) startReply(id)
         }
     }
 
-    /** Resends an edited message, dropping it and everything after it. */
+    /** Shows the previous (-1) or next (+1) version of the last exchange. */
+    fun showVersion(step: Int) {
+        val id = conversationId.value ?: return
+        val versions = state.value.versions ?: return
+        if (state.value.generating) return
+        val target = versions.variants.getOrNull(versions.index + step) ?: return
+        viewModelScope.launch { repository.selectVersion(id, versions.turnId, target) }
+    }
+
+    /** Resends an edited last message as a new version; the original and its reply are kept. */
     fun sendEdit(
         messageId: String,
         text: String,
@@ -268,10 +297,8 @@ class ChatViewModel(
         if (trimmed.isEmpty() || !state.value.canSend) return
         engine.dismissFailure()
         viewModelScope.launch {
-            val original = repository.messages(id).firstOrNull { it.id == messageId } ?: return@launch
-            repository.deleteFrom(original)
-            repository.addUserMessage(id, trimmed)
-            startReply(id)
+            if (repository.messages(id).none { it.id == messageId }) return@launch
+            if (repository.newVersion(id, editedText = trimmed)) startReply(id)
         }
     }
 

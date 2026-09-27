@@ -41,11 +41,33 @@ interface ConversationDao {
 
 @Dao
 interface MessageDao {
+    /** Every message, including versions not on screen. */
     @Query("SELECT * FROM messages WHERE conversationId = :conversationId ORDER BY createdAt ASC")
-    fun observe(conversationId: String): Flow<List<MessageEntity>>
+    fun observeAll(conversationId: String): Flow<List<MessageEntity>>
 
-    @Query("SELECT * FROM messages WHERE conversationId = :conversationId ORDER BY createdAt ASC")
+    /** The conversation as shown and sent to the model. */
+    @Query("SELECT * FROM messages WHERE conversationId = :conversationId AND active = 1 ORDER BY createdAt ASC")
     suspend fun list(conversationId: String): List<MessageEntity>
+
+    @Query("SELECT * FROM messages WHERE conversationId = :conversationId AND turnId = :turnId ORDER BY createdAt ASC")
+    suspend fun turn(
+        conversationId: String,
+        turnId: String,
+    ): List<MessageEntity>
+
+    @Query("UPDATE messages SET active = (variant = :variant) WHERE conversationId = :conversationId AND turnId = :turnId")
+    suspend fun selectVariant(
+        conversationId: String,
+        turnId: String,
+        variant: Int,
+    )
+
+    /** Forgets the versions not picked, once the chat moves on. */
+    @Query("DELETE FROM messages WHERE conversationId = :conversationId AND active = 0")
+    suspend fun deleteInactive(conversationId: String)
+
+    @Upsert
+    suspend fun upsertAll(messages: List<MessageEntity>)
 
     @Upsert
     suspend fun upsert(message: MessageEntity)
@@ -54,18 +76,12 @@ interface MessageDao {
     suspend fun delete(id: String)
 
     /** Messages containing [pattern] (a LIKE pattern with backslash escapes), newest first. */
-    @Query("SELECT * FROM messages WHERE content LIKE :pattern ESCAPE '\\' ORDER BY createdAt DESC LIMIT :limit")
+    @Query("SELECT * FROM messages WHERE content LIKE :pattern ESCAPE '\\' AND active = 1 ORDER BY createdAt DESC LIMIT :limit")
     suspend fun search(
         pattern: String,
         limit: Int,
     ): List<MessageEntity>
 
-    /** Removes a message and everything after it, for edit-and-resend. */
-    @Query("DELETE FROM messages WHERE conversationId = :conversationId AND createdAt >= :createdAt")
-    suspend fun deleteFrom(
-        conversationId: String,
-        createdAt: Long,
-    )
 }
 
 @Dao

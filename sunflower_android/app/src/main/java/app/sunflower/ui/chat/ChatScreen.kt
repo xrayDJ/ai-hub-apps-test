@@ -1,5 +1,10 @@
 package app.sunflower.ui.chat
 
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import app.sunflower.ui.theme.MonoFamily
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.animation.animateColorAsState
 import android.Manifest
 import kotlinx.coroutines.delay
@@ -110,6 +115,7 @@ fun ChatScreen(
     onKeepCurrentModel: () -> Unit,
     onToggleThinking: () -> Unit,
     onRename: (String) -> Unit,
+    onVersion: (step: Int) -> Unit,
     focusMessageId: String?,
     onSystemPromptChange: (String) -> Unit,
     onBack: () -> Unit,
@@ -271,6 +277,8 @@ fun ChatScreen(
                                     onTap = toggle,
                                     onCopy = copy,
                                     onRegenerate = if (isLast && state.canSend) onRegenerate else null,
+                                    versions = state.versions?.takeIf { isLast && !state.generating },
+                                    onVersion = onVersion,
                                     modifier = Modifier.messageAnimation(this).then(glowModifier),
                                 )
                             }
@@ -511,6 +519,8 @@ private fun AssistantMessage(
     onCopy: () -> Unit,
     onRegenerate: (() -> Unit)?,
     modifier: Modifier = Modifier,
+    versions: Versions? = null,
+    onVersion: (Int) -> Unit = {},
 ) {
     val colors = MaterialTheme.colorScheme
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
@@ -531,6 +541,7 @@ private fun AssistantMessage(
             MessageActions(showActions) {
                 ActionButton(SunIcons.Copy, "Copy", onCopy)
                 if (onRegenerate != null) ActionButton(SunIcons.Regenerate, "Regenerate", onRegenerate)
+                if (versions != null) VersionSwitcher(versions, onVersion)
                 if (stats != null) {
                     Text(
                         stats,
@@ -556,6 +567,41 @@ private fun MessageActions(
         exit = fadeOut(Motion.exit()) + shrinkVertically(Motion.exit()),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) { content() }
+    }
+}
+
+/** ‹ 2/3 ›: flips between versions of the last exchange. */
+@Composable
+private fun VersionSwitcher(
+    versions: Versions,
+    onStep: (Int) -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        SunIconButton(
+            Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+            "Previous version",
+            { onStep(-1) },
+            size = 34.dp,
+            container = Color.Transparent,
+            tint = colors.onSurfaceVariant.copy(alpha = if (versions.index > 0) 1f else 0.35f),
+            enabled = versions.index > 0,
+        )
+        Text(
+            "${versions.index + 1}/${versions.count}",
+            style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFamily),
+            color = colors.onSurfaceVariant,
+            modifier = Modifier.semantics { contentDescription = "Version ${versions.index + 1} of ${versions.count}" },
+        )
+        SunIconButton(
+            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            "Next version",
+            { onStep(1) },
+            size = 34.dp,
+            container = Color.Transparent,
+            tint = colors.onSurfaceVariant.copy(alpha = if (versions.index < versions.count - 1) 1f else 0.35f),
+            enabled = versions.index < versions.count - 1,
+        )
     }
 }
 
